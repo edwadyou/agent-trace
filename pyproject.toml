@@ -1,0 +1,60 @@
+[project]
+name = "agent-monitor"
+version = "0.1.0"
+description = "Standalone local Agent monitoring -- trace execution without remote dependencies"
+requires-python = ">=3.10"
+dependencies = [
+    "opentelemetry-api>=1.20",
+    "opentelemetry-sdk>=1.20",
+]
+
+[project.optional-dependencies]
+instrument = [
+    "openinference-instrumentation>=0.1.38",
+]
+openai = [
+    "openinference-instrumentation-openai",
+]
+langchain = [
+    "openinference-instrumentation-langchain",
+]
+llama-index = [
+    "openinference-instrumentation-llama-index",
+]
+anthropic = [
+    "openinference-instrumentation-anthropic",
+]
+google-genai = [
+    "openinference-instrumentation-google-genai",
+]
+bedrock = [
+    "openinference-instrumentation-bedrock",
+]
+dspy = [
+    "openinference-instrumentation-dspy",
+]
+litellm = [
+    "openinference-instrumentation-litellm",
+]
+groq = [
+    "openinference-instrumentation-groq",
+]
+haystack = [
+    "openinference-instrumentation-haystack",
+]
+autogen = [
+    "openinference-instrumentation-autogen",
+]
+smolagents = [
+    "openinference-instrumentation-smolagents",
+]
+all-instruments = [
+    "agent-monitor[instrument,openai,langchain,llama-index,anthropic,google-genai,bedrock,dspy,litellm,groq,haystack,autogen,smolagents]",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent_monitor"]
