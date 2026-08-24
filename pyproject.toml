@@ -45,11 +45,14 @@ haystack = [
 autogen = [
     "openinference-instrumentation-autogen",
 ]
+crewai = [
+    "openinference-instrumentation-crewai",
+]
 smolagents = [
     "openinference-instrumentation-smolagents",
 ]
 all-instruments = [
-    "agent-monitor[instrument,openai,langchain,llama-index,anthropic,google-genai,bedrock,dspy,litellm,groq,haystack,autogen,smolagents]",
+    "agent-monitor[instrument,openai,langchain,llama-index,anthropic,google-genai,bedrock,dspy,litellm,groq,haystack,autogen,crewai,smolagents]",
 ]
 
 [build-system]

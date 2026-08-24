@@ -1,8 +1,72 @@
+# ============================================================================
+# secrets & env
+# ============================================================================
 .env
 .env.*
 !.env.example
 
+# ============================================================================
+# Python
+# ============================================================================
 .venv/
 __pycache__/
 *.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.eggs/
+*.spec
 
+# ============================================================================
+# agent-monitor runtime outputs
+# ============================================================================
+# Streaming JSONL trace written by JsonlFileExporter (default)
+latest_traces.jsonl
+# Nested per-trace JSON trees written by ConsoleSpanExporter
+traces/
+# Render artifacts written by trace_renderer.render_tree
+render_*.txt
+# Anything that looks like a captured trace dump
+*.trace.jsonl
+
+# ============================================================================
+# Streamlit
+# ============================================================================
+.streamlit/secrets.toml
+
+# ============================================================================
+# IDE / editor
+# ============================================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ============================================================================
+# OS junk
+# ============================================================================
+*~
+*.tmp
+*.bak
+*.orig
+*.rej
+*.log
+
+# ============================================================================
+# dev scratch / temp artifacts
+# ============================================================================
+# Old / one-off smoke-test scripts
+_smoke_test.py
+# Output captures from ad-hoc CLI runs
+_out.txt
+cmdpy.txt
+# Ad-hoc write/patch helper scripts (auto-named by some IDEs/tools)
+_write_*.py
+_patch_*.py
+# Throw-away experiment directories
+_ast_check/
+_cli_test/
+_scratch/
