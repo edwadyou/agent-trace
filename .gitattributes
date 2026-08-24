@@ -1,0 +1,55 @@
+# ============================================================================
+# Normalize line endings for all text files to LF in the repo
+# (checkout still respects each user's core.autocrlf; commit always stores LF)
+# ============================================================================
+* text=auto eol=lf
+
+# ---------------------------------------------------------------------------
+# Explicitly text + LF for common source / config types
+# ---------------------------------------------------------------------------
+*.py              text eol=lf
+*.md              text eol=lf
+*.rst text eol=lf
+*.toml            text eol=lf
+*.cfg             text eol=lf
+*.ini             text eol=lf
+*.txt text eol=lf
+*.json            text eol=lf
+*.jsonl           text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.xml text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.ps1             text eol=lf
+*.sh text eol=lf
+*.bat text eol=lf
+*.cmd             text eol=lf
+
+# Git-related meta files MUST keep LF
+.gitignore text eol=lf
+.gitattributes   text eol=lf
+
+# ---------------------------------------------------------------------------
+# Force binary (no newline conversion, no diff tricks) for these
+# ---------------------------------------------------------------------------
+*.png             binary
+*.jpg             binary
+*.jpeg            binary
+*.gif binary
+*.webp            binary
+*.ico             binary
+*.pdf             binary
+*.zip             binary
+*.gz binary
+*.tar binary
+*.7z binary
+*.rar binary
+*.exe binary
+*.dll binary
+*.pyd binary
+*.so binary
+*.dylib           binary
+*.whl binary
