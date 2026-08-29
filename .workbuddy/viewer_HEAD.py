@@ -1,4 +1,4 @@
-"""Streamlit viewer for ``latest_traces.jsonl`` - Agent Trace Monitor.
+﻿"""Streamlit viewer for ``latest_traces.jsonl`` - Agent Trace Monitor.
 
 Three-column layout
 -------------------
@@ -175,20 +175,6 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
     border-color: rgba(59,130,246,0.7) !important;
 }
 
-/* ----- trace card list (flowchart explorer left column) ----- */
-.trace-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 8px;
-    padding: 6px 8px;
-    margin-bottom: 6px;
-}
-.trace-card-active {
-    border-color: rgba(59,130,246,0.55);
-    background: rgba(59,130,246,0.10);
-}
-
-/* ----- right metadata panel ----- */
 /* ----- right metadata panel ----- */
 .meta-wrap {
     background: rgba(255,255,255,0.03);
@@ -322,34 +308,7 @@ footer { visibility: hidden; }
 }
 .msg-card .msg-role-label { font-weight: 700; }
 .msg-card .msg-body {
-    max-height: 18em;
-    overflow-y: auto;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    padding: 6px 10px 8px 10px;
-    margin: 0;
-    font-size: 12.5px;
-    line-height: 1.45;
-    color: #d1d5db;
-}
-.msg-card .msg-meta {
-    padding: 3px 10px;
-    font-size: 10.5px;
-    color: #9ca3af;
-    background: rgba(255,255,255,0.02);
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-.msg-card .msg-part-block {
-    margin: 6px 0;
-    padding: 6px 8px;
-    border-left: 2px solid rgba(59,130,246,0.5);
-    background: rgba(59,130,246,0.06);
-    border-radius: 0 4px 4px 0;
-    font-size: 11.5px;
-}
-.mermaid .nodeLabel, .mermaid .node rect, .mermaid .node polygon {
-    cursor: pointer;
-}
+    max-height: 6em;
     overflow-y: auto;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -718,6 +677,7 @@ def _extract_error_info(span: dict) -> dict:
 st.session_state.setdefault("trace_source", None)
 st.session_state.setdefault("selected_trace", None)
 st.session_state.setdefault("selected_span", None)
+st.session_state.setdefault("expanded_spans", set())
 
 
 # ---------------------------------------------------------------------------
@@ -781,6 +741,7 @@ elif st.session_state.selected_trace is None or st.session_state.selected_trace 
     _old = st.session_state.selected_trace
     st.session_state.selected_trace = trace_ids[0]
     st.session_state.selected_span = None
+    st.session_state.expanded_spans = set()
     _dbg(f"FIX: selected_trace was {_old!r}, now SET to {st.session_state.selected_trace!r}")
 else:
     _dbg(f"KEEP: selected_trace = {st.session_state.selected_trace!r} (valid)")
@@ -791,7 +752,7 @@ else:
 # ---------------------------------------------------------------------------
 hdr_l, hdr_m, hdr_r = st.columns([2, 3, 2])
 with hdr_l:
-    st.markdown("## 🔎 Agent 链路监控  `v3-3col`", unsafe_allow_html=True)
+    st.markdown("## 🔎 Agent Trace Monitor  `v3-3col`", unsafe_allow_html=True)
     st.caption(
         f"**{len(traces)}** traces / **{sum(len(s) for s in traces.values())}** spans"
         + (f"  ·  _dropped {dropped} malformed rows_" if dropped else "")
@@ -803,7 +764,7 @@ with hdr_m:
         except ValueError:
             cur_idx = 0
         new_path_str = st.selectbox(
-            "数据源",
+            "Trace source",
             options=[str(p) for _, p in sources],
             index=cur_idx,
             format_func=lambda s: next(lbl for lbl, p in sources if str(p) == s),
@@ -813,6 +774,7 @@ with hdr_m:
             st.session_state.trace_source = new_path_str
             st.session_state.selected_trace = None
             st.session_state.selected_span = None
+            st.session_state.expanded_spans = set()
             st.rerun()
     else:
         pass  # single-source mode: do not render the raw path caption
@@ -882,11 +844,11 @@ with hdr_r:
               1. If the root name is a meaningful business name (not a
                  generic LangChain wrapper), shorten it via _short_purpose.
               2. Pattern-match LangChain internals:
-                 - RunnableParallel<tools...>  -> "多任务并行（n）"
-                 - RunnableSequence with TOOL child spans -> "工具型智能体"
-                 - RunnableSequence with RETRIEVER child spans -> "检索链"
-                 - RunnableSequence (Prompt -> LLM -> Parser) -> "LLM 调用链"
-                 - RunnableSequence (just LLM) -> "大模型调用"
+                 - RunnableParallel<tools...>  -> "Parallel Search (n)"
+                 - RunnableSequence with TOOL child spans -> "Tool Agent"
+                 - RunnableSequence with RETRIEVER child spans -> "Retrieval Chain"
+                 - RunnableSequence (Prompt -> LLM -> Parser) -> "LLM Chain"
+                 - RunnableSequence (just LLM) -> "LLM Call"
               3. Friendly name via viewer.naming on the root name.
               4. Last resort: "(unnamed)".
             """
@@ -1008,11 +970,11 @@ with hdr_r:
             kk = _aggregate_kpi(spans)
             label = _trace_label(spans)
             if kk.final_status == "ERROR":
-                ico = "❌"  # 红色叉（错误）
+                ico = "❌"  # red cross
             elif kk.final_status == "OK":
-                ico = "✅"  # 绿色勾（成功）
+                ico = "✅"  # green tick
             else:
-                ico = "⏳"  # 沙漏（未完成）
+                ico = "⏳"  # hourglass (UNSET / in-progress)
             return (
                 f"{ico}  {label}  "
                 f"·  {kk.n_spans} spans  "
@@ -1030,6 +992,7 @@ with hdr_r:
         if new_tid != st.session_state.selected_trace:
             st.session_state.selected_trace = new_tid
             st.session_state.selected_span = None
+            st.session_state.expanded_spans = set()
             st.rerun()
 
 
@@ -1061,274 +1024,82 @@ for c in children_map.values():
     c.sort(key=lambda s: int(s.get("start_time", 0)))
 
 
-# ---------------------------------------------------------------------------
-# Flowchart mode (Mermaid) + click-to-zoom
-# ---------------------------------------------------------------------------
-_MERMAID_MAX_NODES = 80
-_NODE_LABEL_MAX_CHARS = 60
+# ===========================================================================
+# LEFT tree renderer
+# ===========================================================================
+def _render_tree(spans_for_node: Iterable[dict], children_: dict, *, depth: int) -> None:
+    """Recursive tree renderer.
 
+    For each span we draw:
+      [indent spacer] [chevron button] [select button with icon+name] [duration]
 
-def _mermaid_safe_id(sid):
-    return 'n_' + sid.replace('-', '_')
+    Recursion happens for children when the parent is expanded (or when the
+    parent itself is the currently-selected span, so the user always sees
+    their selection in context).
+    """
+    for s in spans_for_node:
+        sid = s["span_id"]
+        attrs = s.get("attributes") or {}
+        kind = span_kind(attrs)
+        info = SPAN_KINDS.get(kind, SPAN_KINDS["UNKNOWN"])
+        icon = info[0]
+        name = _span_display_name(s)
+        start_ns = int(s.get("start_time", 0))
+        end_ns = int(s.get("end_time", 0))
+        dur_ms = (end_ns - start_ns) / 1_000_000
+        status = str(s.get("status", "")).upper()
+        is_error = status == "ERROR"
+        is_selected = (st.session_state.selected_span == sid)
+        inner = children_.get(sid, [])
+        is_expanded = sid in st.session_state.expanded_spans
 
-
-def _mermaid_label(span):
-    attrs = span.get('attributes') or {}
-    kind = span_kind(attrs)
-    info = SPAN_KINDS.get(kind, SPAN_KINDS['UNKNOWN'])
-    icon = info[0]
-    name = _span_display_name(span)
-    name = re.sub(r'[\"\\#;|]', ' ', name).strip()
-    if len(name) > _NODE_LABEL_MAX_CHARS:
-        name = name[:_NODE_LABEL_MAX_CHARS - 1] + '...'
-    start_ns = int(span.get('start_time', 0))
-    end_ns = int(span.get('end_time', 0))
-    dur_ms = (end_ns - start_ns) / 1_000_000
-    dur = _format_duration_ms(dur_ms)
-    return f'<b>{icon} {name}</b><br/><small>{kind} &middot; {dur}</small>'
-
-
-def _build_mermaid(spans, *, focus=None, hops=2):
-    if not spans:
-        return 'flowchart TD\n    empty[　（无 span）　]'
-    spans_by_id = {s['span_id']: s for s in spans}
-    if focus and focus in spans_by_id:
-        visible = {focus}
-        up, down = {focus}, {focus}
-        for _ in range(hops):
-            new_up = set()
-            for sid in up:
-                pid = spans_by_id.get(sid, {}).get('parent_span_id')
-                if pid and pid in spans_by_id and pid not in visible:
-                    new_up.add(pid)
-            visible |= new_up
-            up = new_up
-            new_down = set()
-            for sid in down:
-                for s in spans:
-                    if s.get('parent_span_id') == sid and s['span_id'] not in visible:
-                        new_down.add(s['span_id'])
-            visible |= new_down
-            down = new_down
-    else:
-        visible = {s['span_id'] for s in spans}
-    visible_spans = [s for s in spans if s['span_id'] in visible]
-    if len(visible_spans) > _MERMAID_MAX_NODES and not focus:
-        return (
-            'flowchart TD\n'
-            '    root[<　共 ' + str(len(spans)) + ' 个 span　<br/>'
-            '<small>节点数过多，请切回 列表 模式查看</small>]\n'
-            '    classDef root fill:#4b5563,color:#fff,stroke:#1f2937;\n'
-            '    class root root;')
-    visible_spans.sort(key=lambda s: int(s.get('start_time', 0)))
-    starts = [int(s.get('start_time', 0)) for s in visible_spans]
-    min_start = min(starts) if starts else 0
-    out = ['flowchart TD']
-    for css in [
-        '    classDef llm       fill:#1d4ed8,color:#fff,stroke:#1e3a8a,stroke-width:1px;',
-        '    classDef chain     fill:#065f46,color:#fff,stroke:#064e3b,stroke-width:1px;',
-        '    classDef tool      fill:#b45309,color:#fff,stroke:#7c2d12,stroke-width:1px;',
-        '    classDef agent     fill:#a16207,color:#fff,stroke:#713f12,stroke-width:1px;',
-        '    classDef retriever fill:#7e22ce,color:#fff,stroke:#581c87,stroke-width:1px;',
-        '    classDef embedding fill:#0e7490,color:#fff,stroke:#164e63,stroke-width:1px;',
-        '    classDef reranker  fill:#6d28d9,color:#fff,stroke:#4c1d95,stroke-width:1px;',
-        '    classDef prompt    fill:#3f6212,color:#fff,stroke:#365314,stroke-width:1px;',
-        '    classDef parser    fill:#4b5563,color:#fff,stroke:#1f2937,stroke-width:1px;',
-        '    classDef evaluator fill:#a8a29e,color:#1c1917,stroke:#78716c,stroke-width:1px;',
-        '    classDef guardrail fill:#b91c1c,color:#fff,stroke:#7f1d1d,stroke-width:1px;',
-        '    classDef unknown   fill:#6b7280,color:#fff,stroke:#374151,stroke-width:1px;',
-        '    classDef error     stroke:#ef4444,stroke-width:2px,color:#fff;',
-        '    classDef focus     stroke:#facc15,stroke-width:3px;',
-        '    linkStyle default stroke:#64748b,stroke-width:1px;']:
-        out.append(css)
-    children_by_parent = {}
-    for s in visible_spans:
-        pid = s.get('parent_span_id')
-        if pid and pid in visible:
-            children_by_parent.setdefault(pid, []).append(s)
-    _handled_parents = set()
-    for span in visible_spans:
-        sid = span['span_id']
-        nid = _mermaid_safe_id(sid)
-        kind = span_kind(span.get('attributes') or {})
-        kind_class = kind.lower() if kind in SPAN_KINDS else 'unknown'
-        cls = [kind_class]
-        if str(span.get('status', '')).upper() == 'ERROR':
-            cls.append('error')
-        if sid == focus:
-            cls.append('focus')
-        start_ns = int(span.get('start_time', 0))
-        offset_ms = int((start_ns - min_start) / 1_000_000)
-        label = _mermaid_label(span)
-        full_label = f"{label}<br/><small>t+{offset_ms}ms</small>"
-        safe = re.sub(r'[\"\\#;|]', ' ', full_label).strip()
-        out.append(f'    {nid}["{safe}"]')
-        out.append(f'    class {nid} {",".join(cls)};')
-    for parent_id, kids in children_by_parent.items():
-        if len(kids) < 2:
-            continue
-        sorted_kids = sorted(kids, key=lambda s: int(s.get('start_time', 0)))
-        n_kids = len(sorted_kids)
-        all_sequential = True
-        for i in range(n_kids - 1):
-            prev_end = int(sorted_kids[i].get('end_time', 0))
-            next_start = int(sorted_kids[i + 1].get('start_time', 0))
-            if next_start < prev_end:
-                all_sequential = False
-                break
-        pnid = _mermaid_safe_id(parent_id)
-        if all_sequential:
-            _handled_parents.add(parent_id)
-            first_id = _mermaid_safe_id(sorted_kids[0]['span_id'])
-            out.append(f'    {pnid} --> {first_id}')
-            for i in range(n_kids - 1):
-                a = _mermaid_safe_id(sorted_kids[i]['span_id'])
-                b = _mermaid_safe_id(sorted_kids[i + 1]['span_id'])
-                out.append(f'    {a} --> {b}')
-        else:
-            _handled_parents.add(parent_id)
-            out.append('    subgraph SG_' + pnid + '["并行分支"]')
-            out.append('    direction LR')
-            for k in sorted_kids:
-                out.append('        ' + _mermaid_safe_id(k['span_id']))
-            out.append('    end')
-            for k in sorted_kids:
-                out.append(f'    {pnid} --> {_mermaid_safe_id(k["span_id"])}')
-    for span in visible_spans:
-        pid = span.get('parent_span_id')
-        if pid and pid in visible and pid not in _handled_parents:
-            out.append(f'    {_mermaid_safe_id(pid)} --> {_mermaid_safe_id(span["span_id"])}')
-    for span in visible_spans:
-        nid = _mermaid_safe_id(span['span_id'])
-        out.append(f'    click {nid} focusSpan')
-    return '\n'.join(out)
-
-
-def _render_mermaid_html(src, *, height=620, key_prefix='m'):
-    js_src = src.replace('\\', '\\\\').replace('`', '\\`').replace('${', '\\${')
-    html_doc = (
-        '<!DOCTYPE html>\n<html><head><meta charset="utf-8">\n<style>\n'
-        'body{margin:0;padding:8px;background:transparent;color:#e5e7eb;font-family:ui-system,system-ui,sans-serif;}\n'
-        '.mermaid{background:rgba(255,255,255,0.02);border-radius:8px;padding:8px;overflow-x:auto;}\n'
-        '.node{cursor:pointer;}\n'
-        '.node:hover rect,.node:hover polygon{filter:brightness(1.25);}\n'
-        '</style>\n'
-        '<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>\n'
-        '</head><body>\n'
-        '<div class="mermaid" id="m_' + key_prefix + '">\n'
-        + js_src + '\n'
-        '</div>\n<script>\n'
-        'window.focusSpan=function(nodeId){'
-        'var spanId=(nodeId||"").replace(/^n_/,"").replace(/_/g,"-");'
-        'if(!spanId)return;'
-        'var url=new URL(window.top.location.href);'
-        'url.searchParams.set("focus",spanId);'
-        'try{window.top.location.href=url.toString();}'
-        'catch(e1){try{window.parent.location.href=url.toString();}catch(e2){window.location.href=url.toString();}}'
-        '};'
-        'mermaid.initialize({startOnLoad:true,theme:"dark",'
-        'themeVariables:{background:"#0f172a",primaryColor:"#1e293b",'
-        'primaryTextColor:"#e5e7eb",primaryBorderColor:"#334155",'
-        'lineColor:"#64748b",fontFamily:"ui-system,system-ui,sans-serif"},'
-        'flowchart:{curve:"basis",htmlLabels:true,useMaxWidth:true},'
-        'securityLevel:"loose"})'
-        '.then(function(){document.querySelectorAll(".mermaid .node").forEach(function(node){node.addEventListener("click",function(){var id=node.id||(node.querySelector("[id]")?node.querySelector("[id]").id:"");var m=id.match(/n_[A-Za-z0-9_]+/);if(m)window.focusSpan(m[0]);});});});'
-        '</script>\n</body></html>')
-    st.components.v1.html(html_doc, height=height, scrolling=True)
-
-
-def _render_flowchart_mode(sel_spans, kpi, all_by_id):
-    _url_trace = st.query_params.get('trace')
-    if _url_trace and _url_trace in traces:
-        if st.session_state.selected_trace != _url_trace:
-            st.session_state.selected_trace = _url_trace
-            sel_spans = traces[_url_trace]
-            all_by_id = {s['span_id']: s for s in sel_spans}
-            kpi = _aggregate_kpi(sel_spans)
-    focus = st.query_params.get('focus')
-    col_left, col_center, col_right = st.columns([1.1, 2.5, 1.3])
-    with col_left:
-        _render_trace_cards_list()
-    with col_center:
-        _render_flowchart_center(sel_spans)
-    with col_right:
-        _render_detail_column(sel_spans, all_by_id, focus)
-
-
-def _render_trace_cards_list():
-    st.markdown('#### 📋 Traces')
-    if not traces:
-        st.caption('还没有 trace。请运行 agent 后刷新。')
-        return
-    cur_tid = st.session_state.selected_trace
-    sorted_tids = sorted(traces.keys(), key=_trace_start_ns)
-    for tid in sorted_tids:
-        row = _fmt_trace_option(tid)
-        is_cur = (tid == cur_tid)
-        btn_type = 'primary' if is_cur else 'secondary'
-        active_cls = ' trace-card-active' if is_cur else ''
-        st.markdown(f'<div class="trace-card{active_cls}">', unsafe_allow_html=True)
-        st.button(
-            row,
-            key=f'trace_card_{tid}',
-            type=btn_type,
-            use_container_width=True,
-            on_click=_select_trace,
-            args=(tid,),
+        # Each row = 4 columns: indent spacer, chev, select-button, duration
+        col_sp, col_ch, col_sel, col_dur = st.columns(
+            [depth * 0.45 + 0.05, 0.4, 1.0, 0.6]
         )
-        st.markdown('</div>', unsafe_allow_html=True)
+        with col_ch:
+            if inner:
+                chev = "▼" if is_expanded else "▶"
+                if st.button(
+                    chev, key=f"chev_{sid}", help="Expand / collapse",
+                    use_container_width=True,
+                ):
+                    _toggle_expand(sid)
+                    st.rerun()
+            else:
+                # placeholder to keep columns aligned
+                st.button("·", key=f"nope_{sid}", disabled=True,
+                          use_container_width=True)
+        with col_sel:
+            status_glyph = "🔴" if is_error else "🟢" if status == "OK" else "⚪"
+            label = f"{status_glyph} {icon}  {name}"
+            btn_type = "primary" if is_selected else "secondary"
+            if st.button(
+                label,
+                key=f"sel_{sid}",
+                type=btn_type,
+                use_container_width=True,
+                help=f"{kind} · {status} · {_format_duration_ms(dur_ms)}",
+            ):
+                _select_only(sid)
+                if inner and not is_expanded:
+                    _toggle_expand(sid)
+                st.rerun()
+        with col_dur:
+            st.markdown(
+                f'<div style="font-size:10.5px;color:#9ca3af;'
+                f'font-variant-numeric:tabular-nums;text-align:right;'
+                f'padding-top:4px;">{_esc(_format_duration_ms(dur_ms))}</div>',
+                unsafe_allow_html=True,
+            )
+
+        if is_expanded and inner:
+            _render_tree(inner, children_, depth=depth + 1)
 
 
-def _render_flowchart_center(sel_spans):
-    st.markdown('#### 🔀 Agent 流程图')
-    st.caption(
-        f'共 {len(sel_spans)} 个 span。'
-        '点击节点查看详情；'
-        '上方为起始时间最早的节点。'
-    )
-    _render_mermaid_html(_build_mermaid(sel_spans, focus=None), height=720, key_prefix='explorer')
-
-
-def _render_detail_column(sel_spans, all_by_id, focus):
-    st.markdown('#### 🔍 Span 详情')
-    if focus and focus in all_by_id:
-        if st.button('← 返回全貌', key='back_to_overview'):
-            _clear_focus()
-        st.session_state.selected_span = focus
-    elif st.session_state.selected_span and st.session_state.selected_span in all_by_id:
-        pass
-    else:
-        roots = [s for s in sel_spans if not s.get('parent_span_id')]
-        if roots:
-            st.session_state.selected_span = roots[0]['span_id']
-    _render_detail_panel(sel_spans, by_id_all=all_by_id)
-    if focus and focus not in all_by_id:
-        _clear_focus()
-
-
-def _jump_to_span(span_id):
-    st.query_params['focus'] = span_id
-    st.rerun()
-
-
-def _clear_focus():
-    if 'focus' in st.query_params:
-        del st.query_params['focus']
-    st.rerun()
-
-
-def _select_trace(tid):
-    st.session_state.selected_trace = tid
-    if 'focus' in st.query_params:
-        del st.query_params['focus']
-
-
-def _trace_start_ns(tid):
-    spans = traces.get(tid) or []
-    if not spans:
-        return 0
-    return min(int(s.get('start_time', 0)) for s in spans)
-
+# ===========================================================================
+# CENTER detail panel - tabs: Run / Feedback / Metadata
+# ===========================================================================
 def _render_detail_panel(all_spans: list, *, by_id_all: dict) -> None:
     sel_sid = st.session_state.selected_span
     sel_span = by_id_all.get(sel_sid) if sel_sid else None
@@ -1338,7 +1109,7 @@ def _render_detail_panel(all_spans: list, *, by_id_all: dict) -> None:
             '<div class="detail-card" style="text-align:center;color:#9ca3af;'
             'padding:36px 16px;">'
             '<div style="font-size:34px;">👈</div>'
-            '<div style="margin-top:6px;">请在左侧树中选中一个节点查看详情。</div>'
+            '<div style="margin-top:6px;">Click a node in the tree to inspect it.</div>'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -1373,7 +1144,7 @@ def _render_detail_panel(all_spans: list, *, by_id_all: dict) -> None:
         unsafe_allow_html=True,
     )
 
-    tabs = st.tabs(["运行", "反馈", "元数据"])
+    tabs = st.tabs(["Run", "Feedback", "Metadata"])
 
     # ---- Run tab -----------------------------------------------------------
     with tabs[0]:
@@ -1388,95 +1159,43 @@ def _render_detail_panel(all_spans: list, *, by_id_all: dict) -> None:
         _render_metadata_tab(sel_span)
 
 
-def _render_msg(msg):
-    """Render a single LLM message as a structured card."""
-    if isinstance(msg, dict) and isinstance(msg.get("message"), dict):
-        inner = msg["message"]
-        tool_calls = msg.get("tool_calls") or []
-    else:
-        inner = msg if isinstance(msg, dict) else {"content": msg}
-        tool_calls = []
-    role = (inner.get("role") or "user").lower()
-    content_val = inner.get("content") or ""
+def _render_msg(role: str, content: object) -> None:
+    """Render a single LLM message body inside a 4-line scrollable card.
+
+    Replaces st.chat_message, which forced a single-line bubble and
+    horizontally scrolled long unbreakable tokens.
+    """
     palette = {
-        "user":      ("👤", "#10b981", "用户"),
-        "human":     ("👤", "#10b981", "用户"),
-        "assistant": ("🤖", "#3b82f6", "助手"),
-        "ai":        ("🤖", "#3b82f6", "助手"),
-        "system":    ("⚙️", "#9ca3af", "系统"),
-        "tool":      ("🔧", "#f59e0b", "工具"),
-        "function":  ("🔧", "#f59e0b", "工具"),
+        "user":      ("👤", "#10b981", "User"),
+        "human":     ("👤", "#10b981", "User"),
+        "assistant": ("🤖", "#3b82f6", "Assistant"),
+        "ai":        ("🤖", "#3b82f6", "Assistant"),
+        "system":    ("⚙️", "#9ca3af", "System"),
+        "tool":      ("🔧", "#f59e0b", "Tool"),
+        "function":  ("🔧", "#f59e0b", "Tool"),
     }
-    key = role or "user"
-    icon, color, label = palette.get(key, ("💬", "#6b7280", key.title() if key else "消息"))
+    key = (str(role or "user")).lower()
+    icon, color, label = palette.get(
+        key,
+        ("💬", "#6b7280", key.title() if key else "Message"),
+    )
+    # Open card + role chip
     st.markdown(
         f'<div class="msg-card" style="border-left:3px solid {color};">'
         f'<div class="msg-head"><span>{icon}</span>'
-        f'<span class="msg-role-label" style="color:{color}">{_esc(label)}</span></div>',
+        f'<span class="msg-role-label" style="color:{color}">{_esc(label)}</span></div>'
+        f'<div class="msg-body">',
         unsafe_allow_html=True,
     )
-    meta_bits = []
-    if tool_calls:
-        meta_bits.append(f"🔧 {len(tool_calls)} 个工具调用")
-    if isinstance(content_val, list):
-        meta_bits.append(f"📜 {len(content_val)} 个内容块")
-    if meta_bits:
-        st.markdown('<div class="msg-meta">' + " &nbsp;·&nbsp; ".join(meta_bits) + '</div>', unsafe_allow_html=True)
-    st.markdown('<div class="msg-body">', unsafe_allow_html=True)
-    if not content_val:
-        st.markdown("<em style='color:#6b7280'>（空）</em>", unsafe_allow_html=True)
-    elif isinstance(content_val, str):
-        st.markdown(content_val)
-    elif isinstance(content_val, list):
-        for part in content_val:
-            if not isinstance(part, dict):
-                st.markdown(_esc(str(part)))
-                continue
-            ptype = part.get("type")
-            if ptype == "text":
-                st.markdown(part.get("text", ""))
-            elif ptype == "tool_use":
-                inp = part.get("input", {})
-                if not isinstance(inp, dict):
-                    inp = {"value": inp}
-                st.markdown(
-                    f'<div class="msg-part-block"><b>🔧 工具调用</b>: '
-                    f'<code>{_esc(part.get("name", "?"))}</code><br/>'
-                    f'<pre style="margin:4px 0;padding:6px 8px;background:rgba(0,0,0,0.25);'
-                    f'border-radius:4px;font-size:11.5px;white-space:pre-wrap;word-break:break-all">'
-                    f'{_esc(json.dumps(inp, ensure_ascii=False, indent=2)[:600])}</pre></div>',
-                    unsafe_allow_html=True,
-                )
-            elif ptype == "tool_result":
-                res = part.get("content", "")
-                st.markdown(
-                    f'<div class="msg-part-block"><b>📥 工具结果</b>:'
-                    f'<pre style="margin:4px 0;padding:6px 8px;background:rgba(0,0,0,0.25);'
-                    f'border-radius:4px;font-size:11.5px;white-space:pre-wrap;word-break:break-all">'
-                    f'{_esc(str(res)[:600])}</pre></div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(_esc(json.dumps(part, ensure_ascii=False)[:600]))
+    # Body markdown
+    if not content:
+        st.markdown("<em style='color:#6b7280'>(empty)</em>", unsafe_allow_html=True)
+    elif isinstance(content, str):
+        st.markdown(content)
     else:
-        st.markdown(_esc(str(content_val)))
-    if tool_calls and isinstance(tool_calls, list):
-        for tc in tool_calls:
-            if not isinstance(tc, dict):
-                continue
-            name = tc.get("name", "tool")
-            args = tc.get("arguments", "")
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            with st.expander(f"🔧 调用 {name}"):
-                st.json(args)
-    st.markdown("</div>", unsafe_allow_html=True)
-    with st.expander("📋 原始 JSON"):
-        st.json(msg)
-    st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown(_esc(str(content)))
+    # Close card
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
 
 def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
@@ -1487,18 +1206,16 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
     # Always-on: ancestor breadcrumb
     # (ancestry shown via parent chip in header)
 
-    # --- Input / Output side-by-side (headers aligned; each side scrolls independently) --
-    c_in, c_out = st.columns(2, gap="medium")
-
-    with c_in:
-        st.markdown('<div class="io-col-head in-head">⬇  输入</div>', unsafe_allow_html=True)
+    # --- Input block (collapsible) ------------------------------------------
+    input_open = True
+    with st.expander("⬇  Input", expanded=input_open):
         if kind == "LLM":
             msgs = to_messages(canon(attrs, "messages.input"))
             if msgs:
                 for m in msgs:
                     role = (m.get("role") or "user").lower()
-                    content_val = m.get("content") or ""
-                    _render_msg(m)
+                    content = m.get("content") or ""
+                    _render_msg(role, content)
                     for tc in m.get("tool_calls") or []:
                         nm = tc.get("name") or "tool"
                         with st.expander(f"🔧 {nm}"):
@@ -1507,9 +1224,9 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
                 _render_input_fallback(attrs, "input.value")
         elif kind == "TOOL":
             tp = canon(attrs, "tool.parameters")
-            st.markdown("**工具参数：**")
+            st.markdown("**Tool arguments:**")
             if tp is None:
-                st.caption("（未捕获参数）")
+                st.caption("(no parameters captured)")
             elif isinstance(tp, str):
                 try:
                     st.json(json.loads(tp))
@@ -1520,21 +1237,21 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
         else:
             _render_input_fallback(attrs, "input.value")
 
-    with c_out:
-        st.markdown('<div class="io-col-head out-head">⬆  输出</div>', unsafe_allow_html=True)
+    # --- Output block (collapsible) -----------------------------------------
+    with st.expander("⬆  Output", expanded=True):
         if kind == "LLM":
             msgs = to_messages(canon(attrs, "messages.output"))
             if msgs:
                 for m in msgs:
                     role = (m.get("role") or "assistant").lower()
-                    content_val = m.get("content") or ""
-                    _render_msg(m)
+                    content = m.get("content") or ""
+                    _render_msg(role, content)
             else:
                 _render_input_fallback(attrs, "output.value")
         elif kind == "TOOL":
             tout = canon(attrs, "tool.output")
             if tout is None:
-                st.caption("（未捕获返回结果）")
+                st.caption("(no result captured)")
             elif isinstance(tout, (dict, list)):
                 st.json(tout)
             elif isinstance(tout, str):
@@ -1546,7 +1263,7 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
                         st.code(str(parsed))
                 except (json.JSONDecodeError, TypeError):
                     if len(tout) > 6000:
-                        st.code(tout[:6000] + "...truncated")
+                        st.code(tout[:6000] + "\n…(truncated)")
                     else:
                         st.code(tout)
             else:
@@ -1557,11 +1274,11 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
     # --- Token breakdown (LLM) ----------------------------------------------
     if kind == "LLM":
         items = [
-            ("输入 token",      canon(attrs, "tokens.input")),
-            ("输出 token",     canon(attrs, "tokens.output")),
-            ("总计 token",      canon(attrs, "tokens.total")),
-            ("缓存读取 token", canon(attrs, "tokens.cache_read")),
-            ("思考 token",  canon(attrs, "tokens.reasoning")),
+            ("Input tokens",      canon(attrs, "tokens.input")),
+            ("Output tokens",     canon(attrs, "tokens.output")),
+            ("Total tokens",      canon(attrs, "tokens.total")),
+            ("Cache read tokens", canon(attrs, "tokens.cache_read")),
+            ("Reasoning tokens",  canon(attrs, "tokens.reasoning")),
         ]
         shown = [(k, v) for k, v in items if v is not None]
         if shown:
@@ -1576,7 +1293,7 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
     events = span.get("events") or []
     with st.expander(f"⏱  Flow state ({len(events)} event(s))", expanded=False):
         if not events:
-            st.caption("（未记录 span 事件）")
+            st.caption("(no span events recorded)")
         else:
             for i, evt in enumerate(events):
                 if not isinstance(evt, dict):
@@ -1596,7 +1313,7 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
 
     # --- Error block (only if span errored) ---------------------------------
     if is_err and err:
-        st.markdown("#### ⚠ 错误")
+        st.markdown("#### ⚠ Error")
         head_bits = []
         if err["exception_type"]:
             head_bits.append(f"<b>{_esc(err['exception_type'])}</b>")
@@ -1608,33 +1325,24 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
             unsafe_allow_html=True,
         )
         if err["stack"]:
-            st.markdown("**堆栈信息：**")
+            st.markdown("**Stack trace:**")
             st.code(err["stack"], language="text")
 
 
-def _render_input_fallback(attrs, key):
-    """Smart fallback for input/output values."""
+def _render_input_fallback(attrs: dict, key: str) -> None:
     val = attrs.get(key)
     if val is None:
-        st.caption(f"（未捕获 {key.split(chr(46))[0]} ）")
+        st.caption(f"(no {key.split(chr(46))[0]} captured)")
         return
     if isinstance(val, str):
-        parsed = None
-        try:
-            cand = json.loads(val)
-            if isinstance(cand, (dict, list)):
-                parsed = cand
-        except (json.JSONDecodeError, TypeError, ValueError):
-            parsed = None
-        if parsed is not None:
-            st.json(parsed)
-        elif len(val) > 800:
-            st.code(val[:800])
-            st.caption("…（被截断）")
+        if len(val) > 4000:
+            st.code(val[:4000] + "\n…(truncated)")
         else:
             st.code(val)
     else:
         st.json(val)
+
+
 
 
 def _render_feedback_tab(span: dict) -> None:
@@ -1663,9 +1371,9 @@ def _render_feedback_tab(span: dict) -> None:
             '<div class="detail-card" style="text-align:center;color:#9ca3af;'
             'padding:30px 16px;">'
             '<div style="font-size:30px;">⭐</div>'
-            '<div style="margin-top:6px;">尚未记录反馈分数。</div>'
+            '<div style="margin-top:6px;">No feedback recorded yet.</div>'
             '<div style="margin-top:4px;font-size:11px;">'
-            '一旦对该运行评分，分数会自动出现在这里。'
+            'Once you score this run, scores will appear here automatically.'
             '</div></div>',
             unsafe_allow_html=True,
         )
@@ -1692,15 +1400,15 @@ def _render_metadata_tab(span: dict) -> None:
     attrs = span.get("attributes") or {}
 
     st.markdown(
-        '<div class="detail-card"><div class="detail-head">基本信息</div>',
+        '<div class="detail-card"><div class="detail-head">Identity</div>',
         unsafe_allow_html=True,
     )
     rows = [
         ("Trace ID", span.get("trace_id", "")),
         ("Span ID", span.get("span_id", "")),
-        ("父 Span ID", span.get("parent_span_id") or "(根 span)"),
-        ("服务", span.get("service_name") or "-"),
-        ("法案版本", str(span.get("schema_version", "-"))),
+        ("Parent Span ID", span.get("parent_span_id") or "(root)"),
+        ("Service", span.get("service_name") or "-"),
+        ("Schema ver", str(span.get("schema_version", "-"))),
         ("Name", span.get("name", "-")),
     ]
     sid = canon(attrs, "session.id")
@@ -1709,16 +1417,16 @@ def _render_metadata_tab(span: dict) -> None:
     provider = canon(attrs, "model.provider")
     tags = canon(attrs, "tags")
     if sid:
-        rows.append(("会话 / 主题", sid))
+        rows.append(("Session / Thread", sid))
     if uid:
-        rows.append(("用户", uid))
+        rows.append(("User", uid))
     if model:
         rows.append(("Model", f"{model}" + (f"  ({provider})" if provider else "")))
     if tags:
         if isinstance(tags, list):
-            rows.append(("标签", ", ".join(str(t) for t in tags)))
+            rows.append(("Tags", ", ".join(str(t) for t in tags)))
         else:
-            rows.append(("标签", str(tags)))
+            rows.append(("Tags", str(tags)))
     kv = '<div class="detail-kv">'
     for k, v in rows:
         kv += f'<div class="k">{_esc(k)}</div><div class="v">{_esc(v)}</div>'
@@ -1731,14 +1439,14 @@ def _render_metadata_tab(span: dict) -> None:
         unsafe_allow_html=True,
     )
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("总时长", _format_duration_ms(dur_ms))
+    m1.metric("Duration", _format_duration_ms(dur_ms))
     m2.metric("Start", _format_ts(start_ns))
     m3.metric("End", _format_ts(end_ns))
     m4.metric("Span ID", (span.get("span_id", "") or "")[:8] + "…")
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown(
-        '<div class="detail-card"><div class="detail-head">全部属性（过滤后）</div>',
+        '<div class="detail-card"><div class="detail-head">All attributes (filtered)</div>',
         unsafe_allow_html=True,
     )
     st.json(filter_visible_attrs(attrs, show_raw=False))
@@ -1748,7 +1456,7 @@ def _render_metadata_tab(span: dict) -> None:
 
     if span.get("events"):
         st.markdown(
-            '<div class="detail-card"><div class="detail-head">Span 事件</div>',
+            '<div class="detail-card"><div class="detail-head">Span events</div>',
             unsafe_allow_html=True,
         )
         st.json(span.get("events"))
@@ -1757,6 +1465,102 @@ def _render_metadata_tab(span: dict) -> None:
 
 # ===========================================================================
 # RIGHT panel - metadata indicator panel
+# ===========================================================================
+def _render_metadata_panel(trace_kpi: TraceKPI, all_spans: list, *, by_id_all: dict) -> None:
+    """Single-column stats: trace-level + selected-span-level + token & cost."""
+    sel_sid = st.session_state.selected_span
+    sel_span = by_id_all.get(sel_sid) if sel_sid else None
+
+    # ---- TRACE section ----------------------------------------------------
+    label, cls = _status_label(trace_kpi.final_status)
+    rows_trace: list = []
+    rows_trace.append(("Service", trace_kpi.service_name or "-"))
+    rows_trace.append(("Span count", str(trace_kpi.n_spans)))
+    rows_trace.append(("Start", _format_ts(trace_kpi.start_ns)))
+    rows_trace.append(("End",   _format_ts(trace_kpi.end_ns)))
+    rows_trace.append(("Duration", _format_duration_ms(trace_kpi.dur_ms)))
+    rows_trace.append(("LLM / Tool", f"{trace_kpi.n_llm} / {trace_kpi.n_tool}"))
+    rows_trace.append(("Chain / Agent / Prompt",
+                       f"{trace_kpi.n_chain} / {trace_kpi.n_agent} / {trace_kpi.n_prompt}"))
+
+    st.markdown(
+        f'<div class="meta-wrap">'
+        f'<div class="meta-section">'
+        f'<h5>Trace</h5>'
+        f'<div style="margin-bottom:6px"><span class="meta-pill {cls}">{_esc(label)}</span></div>'
+        f'<div class="meta-kv">',
+        unsafe_allow_html=True,
+    )
+    for k, v in rows_trace:
+        st.markdown(
+            f'<div class="k">{_esc(k)}</div><div class="v">{_esc(v)}</div>',
+            unsafe_allow_html=True,
+        )
+    st.markdown("</div></div>", unsafe_allow_html=True)
+
+    # ---- TOKENS section ---------------------------------------------------
+    st.markdown(
+        '<div class="meta-section"><h5>Tokens</h5>',
+        unsafe_allow_html=True,
+    )
+    if trace_kpi.tok_present:
+        rows_tok = [
+            ("Input",  _format_tokens(trace_kpi.t_in)),
+            ("Output", _format_tokens(trace_kpi.t_out)),
+            ("Total",  _format_tokens(trace_kpi.t_in + trace_kpi.t_out)),
+        ]
+        for k, v in rows_tok:
+            st.markdown(
+                f'<div class="meta-kv strong">'
+                f'<div class="k">{_esc(k)}</div><div class="v">{_esc(v)}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+    else:
+        st.markdown(
+            '<div style="color:#6b7280;font-size:11.5px">no token data captured</div>',
+            unsafe_allow_html=True,
+        )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ---- COST section (estimated) -----------------------------------------
+    st.markdown(
+        '<div class="meta-section"><h5>Cost (est.)</h5>',
+        unsafe_allow_html=True,
+    )
+    if trace_kpi.cost_usd > 0:
+        st.markdown(
+            f'<div style="font-size:22px;font-weight:700;color:#fde68a;'
+            f'font-variant-numeric:tabular-nums">${trace_kpi.cost_usd:.4f}</div>'
+            f'<div style="color:#9ca3af;font-size:11px">'
+            f'based on {trace_kpi.n_llm} LLM span(s) × model rates</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div style="color:#6b7280;font-size:11.5px">'
+            f'no cost data{"" if trace_kpi.tok_present else " (no token/model data)"}</div>',
+            unsafe_allow_html=True,
+        )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ---- SELECTED span section --------------------------------------------
+    st.markdown(
+        '<div class="meta-section"><h5>Selected span</h5>',
+        unsafe_allow_html=True,
+    )
+    if not sel_span:
+        st.markdown(
+            '<div style="color:#6b7280;font-size:11.5px">click a tree node</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        _render_span_meta(sel_span)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)  # close meta-wrap
+
+
 def _render_span_meta(span: dict) -> None:
     attrs = span.get("attributes") or {}
     kind = span_kind(attrs)
@@ -1776,13 +1580,13 @@ def _render_span_meta(span: dict) -> None:
     cost = _estimate_cost(span, "tokens")
 
     rows = [
-        ("名称", name),
-        ("类型", kind),
+        ("Name", name),
+        ("Kind", kind),
         ("Model", f"{model}" + (f"  ({provider})" if provider else "")),
         ("Status", ""),
         ("Start", _format_ts_ms(start_ns)),
         ("End",   _format_ts_ms(end_ns)),
-        ("耗时", _format_duration_ms(dur_ms)),
+        ("Latency", _format_duration_ms(dur_ms)),
     ]
     st.markdown(
         f'<div style="margin-bottom:6px">'
@@ -1810,7 +1614,7 @@ def _render_span_meta(span: dict) -> None:
     elif tin is not None or tout is not None:
         st.markdown(
             f'<div class="meta-kv strong">'
-            f'<div class="k">输入 / 输出</div>'
+            f'<div class="k">In / Out</div>'
             f'<div class="v">{_esc(_format_tokens(tin))} / {_esc(_format_tokens(tout))}</div>'
             f'</div>',
             unsafe_allow_html=True,
@@ -1829,11 +1633,48 @@ def _render_span_meta(span: dict) -> None:
 # ===========================================================================
 _dbg(f"BODY: sel_tid={st.session_state.selected_trace!r}, sel_spans count={len(sel_spans)}, first span kind={sel_spans[0].get("kind") if sel_spans else None!r}")
 if not sel_spans:
-    st.info("当前 trace 中没有 span，请运行你的 agent 后刷新。")
+    st.info("No spans in the current trace. Run your agent and refresh.")
     st.stop()
 
-_render_flowchart_mode(
-    sel_spans,
-    kpi,
-    all_by_id={s['span_id']: s for s in sel_spans},
-)
+col_tree, col_detail, col_meta = st.columns([1.1, 2.6, 1.3])
+
+
+# ===========================================================================
+# LEFT column - navigation tree
+# ===========================================================================
+with col_tree:
+    st.markdown(
+        f"#### 🗂 Navigation Tree "
+        f'<span style="color:#9ca3af;font-size:11px;font-weight:400">'
+        f'· {len(filtered_spans)} spans</span>',
+        unsafe_allow_html=True,
+    )
+
+    def _select_only(sid: str) -> None:
+        st.session_state.selected_span = sid
+
+    def _toggle_expand(sid: str) -> None:
+        if sid in st.session_state.expanded_spans:
+            st.session_state.expanded_spans.discard(sid)
+        else:
+            st.session_state.expanded_spans.add(sid)
+
+    _render_tree(roots, children_map, depth=0)
+
+
+# ===========================================================================
+# CENTER column - detail panel (Run / Feedback / Metadata)
+# ===========================================================================
+with col_detail:
+    st.markdown("#### 🔍 Span Detail")
+    _render_detail_panel(sel_spans, by_id_all={s["span_id"]: s for s in sel_spans})
+
+
+# ===========================================================================
+# RIGHT column - metadata indicator panel
+# ===========================================================================
+with col_meta:
+    st.markdown("#### 📊 Metadata")
+    _render_metadata_panel(kpi, sel_spans, by_id_all={s["span_id"]: s for s in sel_spans})
+
+

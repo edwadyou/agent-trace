@@ -15,18 +15,18 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 # value: (icon, color-name, display label)
 SPAN_KINDS: dict[str, tuple[str, str, str]] = {
-    "LLM":       ("\U0001F916", "blue",   "LLM call"),
-    "CHAIN":     ("\U0001F517", "green",  "Chain step"),
-    "TOOL":      ("\U0001F527", "orange", "Tool call"),
-    "AGENT":     ("\U0001F9E0", "yellow", "Agent"),
-    "RETRIEVER": ("\U0001F4DA", "purple", "Retriever"),
-    "EMBEDDING": ("\U0001F4D0", "cyan",   "Embedding"),
-    "RERANKER":  ("\U0001F3AF", "violet", "Reranker"),
-    "PROMPT":    ("\U0001F4DD", "olive",  "Format prompt"),
-    "PARSER":    ("\U0001F50D", "gray",   "Parse response"),
-    "EVALUATOR": ("\u2696\uFE0F",  "tan",   "Evaluator"),
-    "GUARDRAIL": ("\U0001F6E1\uFE0F", "red",    "Guardrail"),
-    "UNKNOWN":   ("\u2754",   "gray",   "Unknown"),
+    "LLM":       ("\U0001F916", "blue",   "大模型调用"),
+    "CHAIN":     ("\U0001F517", "green",  "链路步骤"),
+    "TOOL":      ("\U0001F527", "orange", "工具调用"),
+    "AGENT":     ("\U0001F9E0", "yellow", "智能体"),
+    "RETRIEVER": ("\U0001F4DA", "purple", "检索"),
+    "EMBEDDING": ("\U0001F4D0", "cyan",   "向量化"),
+    "RERANKER":  ("\U0001F3AF", "violet", "重排序"),
+    "PROMPT":    ("\U0001F4DD", "olive",  "填充提示词"),
+    "PARSER":    ("\U0001F50D", "gray",   "解析响应"),
+    "EVALUATOR": ("\u2696\uFE0F",  "tan",   "评估"),
+    "GUARDRAIL": ("\U0001F6E1\uFE0F", "red",    "安全检查"),
+    "UNKNOWN":   ("\u2754",   "gray",   "未知"),
 }
 
 # CSS colors per color-name (referenced by viewer.py)

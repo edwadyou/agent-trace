@@ -1,0 +1,1294 @@
+﻿git : warning: in the working copy of 'viewer.py', CRLF will be replaced by LF the next time Git touches it
+At line:2 char:34
++ cd D:\my-projects\agent-monitor; git diff HEAD viewer.py 2>&1 | Out-F ...
++                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: in the... Git touches it:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+diff --git a/viewer.py b/viewer.py
+index 9a8d947..1ee9b3b 100644
+--- a/viewer.py
++++ b/viewer.py
+@@ -175,6 +175,28 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
+     border-color: rgba(59,130,246,0.7) !important;
+ }
+ 
++/* ----- trace card list (flowchart explorer left column) ----- */
++.trace-card {
++    background: rgba(255,255,255,0.03);
++    border: 1px solid rgba(255,255,255,0.08);
++    border-radius: 8px;
++    padding: 8px 10px;
++    margin-bottom: 8px;
++}
++.trace-card-active {
++    border-color: rgba(59,130,246,0.55);
++    background: rgba(59,130,246,0.10);
++}
++.trace-card-children {
++    margin-top: 4px;
++    font-size: 10.5px;
++    color: #9ca3af;
++    overflow: hidden;
++    text-overflow: ellipsis;
++    white-space: nowrap;
++    padding-left: 4px;
++}
++
+ /* ----- right metadata panel ----- */
+ .meta-wrap {
+     background: rgba(255,255,255,0.03);
+@@ -308,7 +330,7 @@ footer { visibility: hidden; }
+ }
+ .msg-card .msg-role-label { font-weight: 700; }
+ .msg-card .msg-body {
+-    max-height: 6em;
++    max-height: 18em;
+     overflow-y: auto;
+     overflow-wrap: anywhere;
+     word-break: break-word;
+@@ -318,6 +340,24 @@ footer { visibility: hidden; }
+     line-height: 1.45;
+     color: #d1d5db;
+ }
++.msg-card .msg-meta {
++    padding: 3px 10px;
++    font-size: 10.5px;
++    color: #9ca3af;
++    background: rgba(255,255,255,0.02);
++    border-bottom: 1px solid rgba(255,255,255,0.05);
++}
++.msg-card .msg-part-block {
++    margin: 6px 0;
++    padding: 6px 8px;
++    border-left: 2px solid rgba(59,130,246,0.5);
++    background: rgba(59,130,246,0.06);
++    border-radius: 0 4px 4px 0;
++    font-size: 11.5px;
++}
++.mermaid .nodeLabel, .mermaid .node rect, .mermaid .node polygon {
++    cursor: pointer;
++}
+ .msg-card .msg-body > p:first-child { margin-top: 0; }
+ .msg-card .msg-body > p:last-child  { margin-bottom: 0; }
+ .msg-card .msg-body pre {
+@@ -433,7 +473,7 @@ def _span_display_name(span: dict) -> str:
+         m = canon(attrs, "model")
+         if m:
+             return f"{m}"
+-    return disp or span.get("name", "(unnamed)")
++    return disp or span.get("name", "（未命名）")
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -752,7 +792,7 @@ else:
+ # ---------------------------------------------------------------------------
+ hdr_l, hdr_m, hdr_r = st.columns([2, 3, 2])
+ with hdr_l:
+-    st.markdown("## 🔎 Agent Trace Monitor  `v3-3col`", unsafe_allow_html=True)
++    st.markdown("## 🔎 Agent 链路监控  `v3-3col`", unsafe_allow_html=True)
+     st.caption(
+         f"**{len(traces)}** traces / **{sum(len(s) for s in traces.values())}** spans"
+         + (f"  ·  _dropped {dropped} malformed rows_" if dropped else "")
+@@ -764,7 +804,7 @@ with hdr_m:
+         except ValueError:
+             cur_idx = 0
+         new_path_str = st.selectbox(
+-            "Trace source",
++            "数据源",
+             options=[str(p) for _, p in sources],
+             index=cur_idx,
+             format_func=lambda s: next(lbl for lbl, p in sources if str(p) == s),
+@@ -844,16 +884,16 @@ with hdr_r:
+               1. If the root name is a meaningful business name (not a
+                  generic LangChain wrapper), shorten it via _short_purpose.
+               2. Pattern-match LangChain internals:
+-                 - RunnableParallel<tools...>  -> "Parallel Search (n)"
+-                 - RunnableSequence with TOOL child spans -> "Tool Agent"
+-                 - RunnableSequence with RETRIEVER child spans -> "Retrieval Chain"
+-                 - RunnableSequence (Prompt -> LLM -> Parser) -> "LLM Chain"
+-                 - RunnableSequence (just LLM) -> "LLM Call"
++                 - RunnableParallel<tools...>  -> "多任务并行（n)"
++                 - RunnableSequence with TOOL child spans -> "工具型智能体"
++                 - RunnableSequence with RETRIEVER child spans -> "检索链"
++                 - RunnableSequence (Prompt -> LLM -> Parser) -> "LLM 调用链"
++                 - RunnableSequence (just LLM) -> "大模型调用"
+               3. Friendly name via viewer.naming on the root name.
+-              4. Last resort: "(unnamed)".
++              4. Last resort: "（未命名）".
+             """
+             if not spans:
+-                return "(empty trace)"
++                return "（空 trace）"
+             root = next(
+                 (s for s in spans if not s.get("parent_span_id")),
+                 spans[0],
+@@ -881,21 +921,21 @@ with hdr_r:
+                     tools = [t.strip() for t in m.group(1).split(",") if t.strip()]
+                     n = len(tools)
+                     if n == 0:
+-                        return "Parallel Branches"
++                        return "多任务并行"
+                     if n == 1:
+-                        return f"Parallel: {_short_purpose(tools[0]) or tools[0]}"
++                        return f"多任务并行：{_short_purpose(tools[0]) or tools[0]}"
+                     if n == 2:
+                         a = _short_purpose(tools[0]) or tools[0]
+                         b = _short_purpose(tools[1]) or tools[1]
+-                        return f"Parallel: {a} + {b}"
+-                    return f"Parallel Search ({n})"
+-                return "Parallel Branches"
++                        return f"多任务并行：{a} + {b}"
++                    return f"多任务并行（{n}）"
++                return "多任务并行"
+ 
+             if root_name.startswith("RunnableSequence"):
+                 # LangChain instruments ChatPromptTemplate, OutputParser,
+                 # StrOutputParser, etc. all as kind=CHAIN. So we must
+                 # detect Prompt/Parser/LLM by NAME patterns - not just by
+-                # span_kind - otherwise everything classifies as "LLM Call".
++                # span_kind - otherwise everything classifies as "大模型调用".
+                 child_names_l = list(child_names)
+                 child_names_lc = [n.lower() for n in child_names_l]
+ 
+@@ -921,15 +961,15 @@ with hdr_r:
+                 )
+ 
+                 if has_tool:
+-                    return "Tool Agent"
++                    return "工具型智能体"
+                 if has_retriever:
+-                    return "Retrieval Chain"
++                    return "检索链"
+                 if has_llm:
+                     if has_prompt and has_parser:
+-                        return "LLM Chain"
++                        return "LLM 调用链"
+                     if has_prompt:
+-                        return "LLM Call (templated)"
+-                    return "LLM Call"
++                        return "大模型调用（带模板）"
++                    return "大模型调用"
+                 # No LLM detected - try to surface a meaningful child name
+                 for c in children:
+                     cn = c.get("name") or ""
+@@ -937,7 +977,7 @@ with hdr_r:
+                         p = _short_purpose(cn)
+                         if p:
+                             return p
+-                return "Chain Step"
++                return "链路步骤"
+ 
+             # ---- 3) friendly_name fallthrough ----
+             try:
+@@ -954,7 +994,7 @@ with hdr_r:
+             p = _short_purpose(root_name)
+             if p:
+                 return p[:40]
+-            return "(unnamed)"
++            return "（未命名）"
+ 
+         def _fmt_trace_option(t: str) -> str:
+             """Self-explaining dropdown label.
+@@ -970,11 +1010,11 @@ with hdr_r:
+             kk = _aggregate_kpi(spans)
+             label = _trace_label(spans)
+             if kk.final_status == "ERROR":
+-                ico = "❌"  # red cross
++                ico = "❌"  # 红色叉（错误）
+             elif kk.final_status == "OK":
+-                ico = "✅"  # green tick
++                ico = "✅"  # 绿色勾（成功）
+             else:
+-                ico = "⏳"  # hourglass (UNSET / in-progress)
++                ico = "⏳"  # 沙漏（未完成）
+             return (
+                 f"{ico}  {label}  "
+                 f"·  {kk.n_spans} spans  "
+@@ -999,6 +1039,22 @@ with hdr_r:
+ 
+ 
+ # ---------------------------------------------------------------------------
++
++# ---------------------------------------------------------------------------
++# View-mode switcher
++# ---------------------------------------------------------------------------
++st.session_state.setdefault('view_mode', '列表')
++_view_opts = ['列表', '流程图']
++_view_idx = _view_opts.index(st.session_state.view_mode) if st.session_state.view_mode in _view_opts else 0
++st.radio(
++    '视图模式',
++    options=_view_opts,
++    index=_view_idx,
++    horizontal=True,
++    key='view_mode',
++    label_visibility='collapsed',
++)
++
+ # Build filtered span list + tree structure
+ # ---------------------------------------------------------------------------
+ sel_tid = st.session_state.selected_trace
+@@ -1025,177 +1081,486 @@ for c in children_map.values():
+ 
+ 
+ # ===========================================================================
+-# LEFT tree renderer
+-# ===========================================================================
+-def _render_tree(spans_for_node: Iterable[dict], children_: dict, *, depth: int) -> None:
+-    """Recursive tree renderer.
++# ---------------------------------------------------------------------------
++# Flowchart mode (Mermaid) + click-to-zoom
++# ---------------------------------------------------------------------------
++_MERMAID_MAX_NODES = 80
++_NODE_LABEL_MAX_CHARS = 60
++
+ 
+-    For each span we draw:
+-      [indent spacer] [chevron button] [select button with icon+name] [duration]
++def _mermaid_safe_id(sid):
++    return 'n_' + sid.replace('-', '_')
+ 
+-    Recursion happens for children when the parent is expanded (or when the
+-    parent itself is the currently-selected span, so the user always sees
+-    their selection in context).
++
++def _mermaid_label(span):
++    attrs = span.get('attributes') or {}
++    kind = span_kind(attrs)
++    info = SPAN_KINDS.get(kind, SPAN_KINDS['UNKNOWN'])
++    icon = info[0]
++    name = _span_display_name(span)
++    name = re.sub(r'[\"\\#;|]', ' ', name).strip()
++    if len(name) > _NODE_LABEL_MAX_CHARS:
++        name = name[:_NODE_LABEL_MAX_CHARS - 1] + '...'
++    start_ns = int(span.get('start_time', 0))
++    end_ns = int(span.get('end_time', 0))
++    dur_ms = (end_ns - start_ns) / 1_000_000
++    dur = _format_duration_ms(dur_ms)
++    return f'<b>{icon} {name}</b><br/><small>{kind} &middot; {dur}</small>'
++
++
++def _build_mermaid(spans, *, focus=None, hops=2):
++    """Build a Mermaid `flowchart TD` source. With focus, render a 2-hop subgraph.
++
++    Nodes are emitted in start_time order so Mermaid's TD layout flows
++    top-down in time. Each node label carries a t+<ms> relative timestamp.
++    Sequential siblings are chained; concurrent siblings wrapped in subgraph.
+     """
+-    for s in spans_for_node:
+-        sid = s["span_id"]
+-        attrs = s.get("attributes") or {}
+-        kind = span_kind(attrs)
+-        info = SPAN_KINDS.get(kind, SPAN_KINDS["UNKNOWN"])
+-        icon = info[0]
+-        name = _span_display_name(s)
+-        start_ns = int(s.get("start_time", 0))
+-        end_ns = int(s.get("end_time", 0))
+-        dur_ms = (end_ns - start_ns) / 1_000_000
+-        status = str(s.get("status", "")).upper()
+-        is_error = status == "ERROR"
+-        is_selected = (st.session_state.selected_span == sid)
+-        inner = children_.get(sid, [])
+-        is_expanded = sid in st.session_state.expanded_spans
+-
+-        # Each row = 4 columns: indent spacer, chev, select-button, duration
+-        col_sp, col_ch, col_sel, col_dur = st.columns(
+-            [depth * 0.45 + 0.05, 0.4, 1.0, 0.6]
++    if not spans:
++        return "flowchart TD\n    empty[\u3000\uff08\u65e0 span\uff09\u3000]"
++    spans_by_id = {s["span_id"]: s for s in spans}
++
++    if focus and focus in spans_by_id:
++        visible = {focus}
++        up, down = {focus}, {focus}
++        for _ in range(hops):
++            new_up = set()
++            for sid in up:
++                pid = spans_by_id.get(sid, {}).get("parent_span_id")
++                if pid and pid in spans_by_id and pid not in visible:
++                    new_up.add(pid)
++            visible |= new_up
++            up = new_up
++            new_down = set()
++            for sid in down:
++                for s in spans:
++                    if s.get("parent_span_id") == sid and s["span_id"] not in visible:
++                        new_down.add(s["span_id"])
++            visible |= new_down
++            down = new_down
++    else:
++        visible = {s["span_id"] for s in spans}
++    visible_spans = [s for s in spans if s["span_id"] in visible]
++
++    if len(visible_spans) > _MERMAID_MAX_NODES and not focus:
++        return (
++            "flowchart TD\n"
++            "    root[<\u3000\u5171 " + str(len(spans)) + " \u4e2a span\u3000<br/>"
++            "<small>\u8282\u70b9\u6570\u8fc7\u591a\uff0c\u8bf7\u5207\u56de \u5217\u8868 \u6a21\u5f0f\u67e5\u770b</small>]\n"
++            "    classDef root fill:#4b5563,color:#fff,stroke:#1f2937;\n"
++            "    class root root;"
+         )
+-        with col_ch:
+-            if inner:
+-                chev = "▼" if is_expanded else "▶"
+-                if st.button(
+-                    chev, key=f"chev_{sid}", help="Expand / collapse",
+-                    use_container_width=True,
+-                ):
+-                    _toggle_expand(sid)
+-                    st.rerun()
+-            else:
+-                # placeholder to keep columns aligned
+-                st.button("·", key=f"nope_{sid}", disabled=True,
+-                          use_container_width=True)
+-        with col_sel:
+-            status_glyph = "🔴" if is_error else "🟢" if status == "OK" else "⚪"
+-            label = f"{status_glyph} {icon}  {name}"
+-            btn_type = "primary" if is_selected else "secondary"
+-            if st.button(
+-                label,
+-                key=f"sel_{sid}",
+-                type=btn_type,
+-                use_container_width=True,
+-                help=f"{kind} · {status} · {_format_duration_ms(dur_ms)}",
+-            ):
+-                _select_only(sid)
+-                if inner and not is_expanded:
+-                    _toggle_expand(sid)
+-                st.rerun()
+-        with col_dur:
+-            st.markdown(
+-                f'<div style="font-size:10.5px;color:#9ca3af;'
+-                f'font-variant-numeric:tabular-nums;text-align:right;'
+-                f'padding-top:4px;">{_esc(_format_duration_ms(dur_ms))}</div>',
+-                unsafe_allow_html=True,
+-            )
+ 
+-        if is_expanded and inner:
+-            _render_tree(inner, children_, depth=depth + 1)
++    visible_spans.sort(key=lambda s: int(s.get("start_time", 0)))
++    starts = [int(s.get("start_time", 0)) for s in visible_spans]
++    min_start = min(starts) if starts else 0
++
++    out = ["flowchart TD"]
++    out.append("    classDef llm       fill:#1d4ed8,color:#fff,stroke:#1e3a8a,stroke-width:1px;")
++    out.append("    classDef chain     fill:#065f46,color:#fff,stroke:#064e3b,stroke-width:1px;")
++    out.append("    classDef tool      fill:#b45309,color:#fff,stroke:#7c2d12,stroke-width:1px;")
++    out.append("    classDef agent     fill:#a16207,color:#fff,stroke:#713f12,stroke-width:1px;")
++    out.append("    classDef retriever fill:#7e22ce,color:#fff,stroke:#581c87,stroke-width:1px;")
++    out.append("    classDef embedding fill:#0e7490,color:#fff,stroke:#164e63,stroke-width:1px;")
++    out.append("    classDef reranker  fill:#6d28d9,color:#fff,stroke:#4c1d95,stroke-width:1px;")
++    out.append("    classDef prompt    fill:#3f6212,color:#fff,stroke:#365314,stroke-width:1px;")
++    out.append("    classDef parser    fill:#4b5563,color:#fff,stroke:#1f2937,stroke-width:1px;")
++    out.append("    classDef evaluator fill:#a8a29e,color:#1c1917,stroke:#78716c,stroke-width:1px;")
++    out.append("    classDef guardrail fill:#b91c1c,color:#fff,stroke:#7f1d1d,stroke-width:1px;")
++    out.append("    classDef unknown   fill:#6b7280,color:#fff,stroke:#374151,stroke-width:1px;")
++    out.append("    classDef error     stroke:#ef4444,stroke-width:2px,color:#fff;")
++    out.append("    classDef focus     stroke:#facc15,stroke-width:3px;")
++    out.append("    linkStyle default stroke:#64748b,stroke-width:1px;")
++
++    children_by_parent = {}
++    for s in visible_spans:
++        pid = s.get("parent_span_id")
++        if pid and pid in visible:
++            children_by_parent.setdefault(pid, []).append(s)
++
++    _handled_parents = set()
++
++    for span in visible_spans:
++        sid = span["span_id"]
++        nid = _mermaid_safe_id(sid)
++        kind = span_kind(span.get("attributes") or {})
++        kind_class = kind.lower() if kind in SPAN_KINDS else "unknown"
++        cls = [kind_class]
++        if str(span.get("status", "")).upper() == "ERROR":
++            cls.append("error")
++        if sid == focus:
++            cls.append("focus")
++        start_ns = int(span.get("start_time", 0))
++        offset_ms = int((start_ns - min_start) / 1_000_000)
++        label = _mermaid_label(span)
++        full_label = f"{label}<br/><small>t+{offset_ms}ms</small>"
++        safe = re.sub(r"[\"\\#;|]", " ", full_label).strip()
++        out.append(f'    {nid}["{safe}"]')
++        out.append(f"    class {nid} {",".join(cls)};")
++
++    # Infer chain vs parallel from time-overlap
++    for parent_id, kids in children_by_parent.items():
++        if len(kids) < 2:
++            continue
++        sorted_kids = sorted(kids, key=lambda s: int(s.get("start_time", 0)))
++        n_kids = len(sorted_kids)
++        all_sequential = True
++        for i in range(n_kids - 1):
++            prev_end = int(sorted_kids[i].get("end_time", 0))
++            next_start = int(sorted_kids[i + 1].get("start_time", 0))
++            if next_start < prev_end:
++                all_sequential = False
++                break
++        pnid = _mermaid_safe_id(parent_id)
++        if all_sequential:
++            # Chain: parent connects to first child only; siblings chain in time
++            _handled_parents.add(parent_id)
++            first_id = _mermaid_safe_id(sorted_kids[0]["span_id"])
++            out.append(f"    {pnid} --> {first_id}")
++            for i in range(n_kids - 1):
++                a = _mermaid_safe_id(sorted_kids[i]["span_id"])
++                b = _mermaid_safe_id(sorted_kids[i + 1]["span_id"])
++                out.append(f"    {a} --> {b}")
++        else:
++            # Parallel: wrap in subgraph; all children fan out from parent
++            _handled_parents.add(parent_id)
++            out.append('    subgraph SG_' + pnid + '["\u5e76\u884c\u5206\u652f"]')
++            out.append("    direction LR")
++            for k in sorted_kids:
++                out.append(f"        {_mermaid_safe_id(k['span_id'])}")
++            out.append("    end")
++            for k in sorted_kids:
++                out.append(f"    {pnid} --> {_mermaid_safe_id(k['span_id'])}")
+ 
++    # Render edges for parents not handled by chain/parallel block
++    for span in visible_spans:
++        pid = span.get("parent_span_id")
++        if pid and pid in visible and pid not in _handled_parents:
++            out.append(f"    {_mermaid_safe_id(pid)} --> {_mermaid_safe_id(span['span_id'])}")
+ 
+-# ===========================================================================
+-# CENTER detail panel - tabs: Run / Feedback / Metadata
+-# ===========================================================================
+-def _render_detail_panel(all_spans: list, *, by_id_all: dict) -> None:
+-    sel_sid = st.session_state.selected_span
+-    sel_span = by_id_all.get(sel_sid) if sel_sid else None
++    # Mermaid native click directives
++    for span in visible_spans:
++        nid = _mermaid_safe_id(span["span_id"])
++        out.append(f"    click {nid} focusSpan")
+ 
+-    if not sel_span:
++    return "\n".join(out)
++
++
++
++
++
++def _render_mermaid_html(src, *, height=620, key_prefix='m'):
++    """Render Mermaid inside an iframe. Mermaid click directive fires
++    window.focusSpan(nodeId); DOM delegation is kept as a backup.
++    """
++    js_src = (
++        src.replace("\\", "\\\\")
++           .replace("`", "\\`")
++           .replace("${", "\\${")
++    )
++    html_doc = (
++        "<!DOCTYPE html>\n"
++        "<html><head><meta charset=\"utf-8\">\n"
++        "<style>\n"
++        "  body { margin: 0; padding: 8px; background: transparent;\n"
++        "         color: #e5e7eb; font-family: ui-system, system-ui, sans-serif; }\n"
++        "  .mermaid { background: rgba(255,255,255,0.02); border-radius: 8px; padding: 8px; overflow-x: auto; }\n"
++        "  .node { cursor: pointer; }\n"
++        "  .node:hover rect, .node:hover polygon { filter: brightness(1.25); }\n"
++        "</style>\n"
++        "<script src=\"https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js\"></script>\n"
++        "</head><body>\n"
++        "<div class=\"mermaid\" id=\"m_" + key_prefix + "\">\n"
++        + js_src + "\n"
++        "</div>\n"
++        "<script>\n"
++        "  window.focusSpan = function(nodeId) {\n"
++        "    var spanId = (nodeId || \"\").replace(/^n_/, \"\").replace(/_/g, \"-\");\n"
++        "    if (!spanId) return;\n"
++        "    var url = new URL(window.parent.location.href);\n"
++        "    url.searchParams.set(\"focus\", spanId);\n"
++        "    window.parent.location.href = url.toString();\n"
++        "  };\n"
++        "  mermaid.initialize({\n"
++        "    startOnLoad: true,\n"
++        "    theme: \"dark\",\n"
++        "    themeVariables: {\n"
++        "      background: \"#0f172a\",\n"
++        "      primaryColor: \"#1e293b\",\n"
++        "      primaryTextColor: \"#e5e7eb\",\n"
++        "      primaryBorderColor: \"#334155\",\n"
++        "      lineColor: \"#64748b\",\n"
++        "      fontFamily: \"ui-system, system-ui, sans-serif\",\n"
++        "    },\n"
++        "    flowchart: { curve: \"basis\", htmlLabels: true, useMaxWidth: true },\n"
++        "    securityLevel: \"loose\",\n"
++        "  }).then(function() {\n"
++        "    document.querySelectorAll(\".mermaid .node\").forEach(function(node) {\n"
++        "      node.addEventListener(\"click\", function() {\n"
++        "        var id = node.id || (node.querySelector(\"[id]\") ? node.querySelector(\"[id]\").id : \"\");\n"
++        "        var m = id.match(/n_[A-Za-z0-9_]+/);\n"
++        "        if (m) window.focusSpan(m[0]);\n"
++        "      });\n"
++        "    });\n"
++        "  });\n"
++        "</script>\n"
++        "</body></html>"
++    )
++    st.components.v1.html(html_doc, height=height, scrolling=True)
++
++
++
++
++
++def _render_flowchart_mode(sel_spans, kpi, all_by_id):
++    """3-column flowchart explorer: traces | mermaid TD | span detail.
++
++    Layout:
++        col_left   = trace cards list (click to switch trace)
++        col_center = current trace as Mermaid `flowchart TD`
++        col_right  = selected span detail (Run / Feedback / Metadata)
++
++    Click a flowchart node -> URL becomes `?trace=<tid>&focus=<sid>` -> page
++    reloads -> right column shows that span.  URL is bookmarkable.
++    """
++    _url_trace = st.query_params.get("trace")
++    if _url_trace and _url_trace in traces:
++        if st.session_state.selected_trace != _url_trace:
++            st.session_state.selected_trace = _url_trace
++            sel_spans = traces[_url_trace]
++            all_by_id = {s["span_id"]: s for s in sel_spans}
++            kpi = _aggregate_kpi(sel_spans)
++    focus = st.query_params.get("focus")
++
++    col_left, col_center, col_right = st.columns([1.3, 2.2, 1.5])
++
++    with col_left:
++        _render_trace_cards_list()
++    with col_center:
++        _render_flowchart_center(sel_spans)
++    with col_right:
++        _render_detail_column(sel_spans, all_by_id, focus)
++
++
++def _render_trace_cards_list():
++    """Left column: list each trace as a card.  Click -> switch trace."""
++    st.markdown("#### \U0001F4CB Traces")
++    if not traces:
++        st.caption("\u8fd8\u6ca1\u6709 trace\u3002\u8bf7\u8fd0\u884c agent \u540e\u5237\u65b0\u3002")
++        return
++    cur_tid = st.session_state.selected_trace
++    for tid, spans in traces.items():
++        spans_list = spans or []
++        row = _fmt_trace_option(tid)
++        is_cur = (tid == cur_tid)
++        btn_type = "primary" if is_cur else "secondary"
++        active_cls = " trace-card-active" if is_cur else ""
++        # Build card HTML with button + children preview inside
++        # Using st.markdown once for the wrapper + st.button for click handling
+         st.markdown(
+-            '<div class="detail-card" style="text-align:center;color:#9ca3af;'
+-            'padding:36px 16px;">'
+-            '<div style="font-size:34px;">👈</div>'
+-            '<div style="margin-top:6px;">Click a node in the tree to inspect it.</div>'
+-            '</div>',
++            f'<div class="trace-card{active_cls}">',
+             unsafe_allow_html=True,
+         )
+-        return
++        st.button(
++            row,
++            key=f"trace_card_{tid}",
++            type=btn_type,
++            use_container_width=True,
++        )
++        if spans_list:
++            first_root = next(
++                (s for s in spans_list if not s.get("parent_span_id")),
++                spans_list[0],
++            )
++            kids = [
++                s for s in spans_list
++                if s.get("parent_span_id") == first_root.get("span_id")
++            ]
++            kids = sorted(kids, key=lambda s: int(s.get("start_time", 0)))
++            names = [_span_display_name(k) for k in kids[:3]]
++            if names:
++                more = "" if len(kids) <= 3 else f" \u2026 +{len(kids) - 3}"
++                preview = " \u00b7 ".join(names) + more
++                st.markdown(
++                    f'<div class="trace-card-children">\u21b3 {preview}</div>',
++                    unsafe_allow_html=True,
++                )
++        st.markdown("</div>", unsafe_allow_html=True)
+ 
+-    attrs = sel_span.get("attributes") or {}
+-    kind = span_kind(attrs)
+-    disp = _span_display_name(sel_span)
+-    status = str(sel_span.get("status", "")).upper()
+-    start_ns = int(sel_span.get("start_time", 0))
+-    end_ns = int(sel_span.get("end_time", 0))
+-    dur_ms = (end_ns - start_ns) / 1_000_000
+-    err = _extract_error_info(sel_span) if status == "ERROR" else None
+-    is_err = bool(err and (err["status_message"] or err["stack"] or err["exception_type"]))
+ 
+-    # Header card
+-    label, cls = _status_label(status)
+-    st.markdown(
+-        f'<div class="detail-card">'
+-        f'  <div class="detail-head">'
+-        f'    {_kind_pill_html(kind)}'
+-        f'    <span>{_esc(disp)}</span>'
+-        f'    <span style="margin-left:auto">'
+-        f'      <span class="meta-pill {cls}">{_esc(label)}</span>'
+-        f'    </span>'
+-        f'  </div>'
+-        f'  <div class="detail-sub">'
+-        f'    {_format_duration_ms(dur_ms)}  ·  span_id={_esc(sel_span.get("span_id",""))[:16]}…'
+-        f'    {("  ·  parent=" + _esc(sel_span.get("parent_span_id") or "(root)")[:16] + "…") if sel_span.get("parent_span_id") else ""}'
+-        f'  </div>'
+-        f'</div>',
+-        unsafe_allow_html=True,
++def _render_flowchart_center(sel_spans):
++    """Center column: current trace's span flowchart (TD)."""
++    st.markdown("#### \U0001F500 Agent \u6d41\u7a0b\u56fe")
++    st.caption(
++        f"\u5171 {len(sel_spans)} \u4e2a span\u3002"
++        "\u70b9\u51fb\u8282\u70b9\u67e5\u770b\u8be6\u60c5\uff1b"
++        "\u4e0a\u65b9\u4e3a\u8d77\u59cb\u65f6\u95f4\u6700\u65e9\u7684\u8282\u70b9\u3002"
+     )
++    _render_mermaid_html(
++        _build_mermaid(sel_spans, focus=None),
++        height=720,
++        key_prefix="explorer",
++    )
++    with st.expander(
++        "\u5982\u679c\u70b9\u51fb\u65e0\u6548\uff0c\u53ef\u4ee5\u5728\u8fd9\u91cc\u624b\u52a8\u9009\u62e9\u4e00\u4e2a span",
++        expanded=False,
++    ):
++        span_options = [(s["span_id"], _span_display_name(s)) for s in sel_spans]
++        labels = [name for _, name in span_options]
++        if not labels:
++            st.caption("\u65e0\u53ef\u9009 span")
++        else:
++            picked = st.selectbox(
++                "\u9009\u62e9 span",
++                options=labels,
++                key="manual_focus_pick",
++                index=0,
++            )
++            if st.button("\u805a\u7126\u5230\u8be5 span", key="manual_focus_btn"):
++                target_id = next(sid for sid, n in span_options if n == picked)
++                _jump_to_span(target_id)
++
++
++def _render_detail_column(sel_spans, all_by_id, focus):
++    """Right column: span detail panel for the focused / selected span."""
++    st.markdown("#### \U0001F50D Span \u8be6\u60c5")
++    if focus and focus in all_by_id:
++        if st.button("\u2190 \u8fd4\u56de\u5168\u8c8c", key="back_to_overview"):
++            _clear_focus()
++        st.session_state.selected_span = focus
++    elif st.session_state.selected_span and st.session_state.selected_span in all_by_id:
++        pass
++    else:
++        roots = [s for s in sel_spans if not s.get("parent_span_id")]
++        if roots:
++            st.session_state.selected_span = roots[0]["span_id"]
++    _render_detail_panel(sel_spans, by_id_all=all_by_id)
++    if focus and focus not in all_by_id:
++        _clear_focus()
++
+ 
+-    tabs = st.tabs(["Run", "Feedback", "Metadata"])
++def _jump_to_span(span_id):
++    """Set focus query param (and preserve trace)."""
++    st.query_params["focus"] = span_id
++    st.rerun()
+ 
+-    # ---- Run tab -----------------------------------------------------------
+-    with tabs[0]:
+-        _render_run_tab(sel_span, is_err=is_err, err=err)
+ 
+-    # ---- Feedback tab ------------------------------------------------------
+-    with tabs[1]:
+-        _render_feedback_tab(sel_span)
++def _clear_focus():
++    """Clear focus query param, keep trace."""
++    if "focus" in st.query_params:
++        del st.query_params["focus"]
++    st.rerun()
+ 
+-    # ---- Metadata tab ------------------------------------------------------
+-    with tabs[2]:
+-        _render_metadata_tab(sel_span)
+ 
+ 
+-def _render_msg(role: str, content: object) -> None:
+-    """Render a single LLM message body inside a 4-line scrollable card.
+ 
+-    Replaces st.chat_message, which forced a single-line bubble and
+-    horizontally scrolled long unbreakable tokens.
++
++def _render_msg(msg):
++    """Render a single LLM message as a structured card.
++
++    `msg` is the full normalized message dict (possibly OI-wrapped with
++    top-level 'message' and 'tool_calls').  Renders role chip + meta line
++    + body content (str or Anthropic-style list of parts) + raw JSON.
+     """
++    if isinstance(msg, dict) and isinstance(msg.get("message"), dict):
++        inner = msg["message"]
++        tool_calls = msg.get("tool_calls") or []
++    else:
++        inner = msg if isinstance(msg, dict) else {"content": msg}
++        tool_calls = []
++    role = (inner.get("role") or "user").lower()
++    content_val = inner.get("content") or ""
+     palette = {
+-        "user":      ("👤", "#10b981", "User"),
+-        "human":     ("👤", "#10b981", "User"),
+-        "assistant": ("🤖", "#3b82f6", "Assistant"),
+-        "ai":        ("🤖", "#3b82f6", "Assistant"),
+-        "system":    ("⚙️", "#9ca3af", "System"),
+-        "tool":      ("🔧", "#f59e0b", "Tool"),
+-        "function":  ("🔧", "#f59e0b", "Tool"),
++        "user":      ("\U0001F464", "#10b981", "\u7528\u6237"),
++        "human":     ("\U0001F464", "#10b981", "\u7528\u6237"),
++        "assistant": ("\U0001F916", "#3b82f6", "\u52a9\u624b"),
++        "ai":        ("\U0001F916", "#3b82f6", "\u52a9\u624b"),
++        "system":    ("\u2699\ufe0f", "#9ca3af", "\u7cfb\u7edf"),
++        "tool":      ("\U0001F527", "#f59e0b", "\u5de5\u5177"),
++        "function":  ("\U0001F527", "#f59e0b", "\u5de5\u5177"),
+     }
+-    key = (str(role or "user")).lower()
+-    icon, color, label = palette.get(
+-        key,
+-        ("💬", "#6b7280", key.title() if key else "Message"),
+-    )
+-    # Open card + role chip
++    key = role or "user"
++    icon, color, label = palette.get(key, ("\U0001F4AC", "#6b7280", key.title() if key else "\u6d88\u606f"))
+     st.markdown(
+         f'<div class="msg-card" style="border-left:3px solid {color};">'
+-        f'<div class="msg-head"><span>{icon}</span>'
+-        f'<span class="msg-role-label" style="color:{color}">{_esc(label)}</span></div>'
+-        f'<div class="msg-body">',
++        f'<div class="msg-head">'
++        f'<span>{icon}</span>'
++        f'<span class="msg-role-label" style="color:{color}">{_esc(label)}</span>'
++        f'</div>',
+         unsafe_allow_html=True,
+     )
+-    # Body markdown
+-    if not content:
+-        st.markdown("<em style='color:#6b7280'>(empty)</em>", unsafe_allow_html=True)
+-    elif isinstance(content, str):
+-        st.markdown(content)
++    meta_bits = []
++    if tool_calls:
++        meta_bits.append(f"\U0001F527 {len(tool_calls)} \u4e2a\u5de5\u5177\u8c03\u7528")
++    if isinstance(content_val, list):
++        meta_bits.append(f"\U0001F4DC {len(content_val)} \u4e2a\u5185\u5bb9\u5757")
++    if meta_bits:
++        st.markdown(
++            '<div class="msg-meta">' + " &nbsp;\u00b7&nbsp; ".join(meta_bits) + '</div>',
++            unsafe_allow_html=True,
++        )
++    st.markdown('<div class="msg-body">', unsafe_allow_html=True)
++    if not content_val:
++        st.markdown("<em style='color:#6b7280'>\uff08\u7a7a\uff09</em>", unsafe_allow_html=True)
++    elif isinstance(content_val, str):
++        st.markdown(content_val)
++    elif isinstance(content_val, list):
++        for part in content_val:
++            if not isinstance(part, dict):
++                st.markdown(_esc(str(part)))
++                continue
++            ptype = part.get("type")
++            if ptype == "text":
++                st.markdown(part.get("text", ""))
++            elif ptype == "tool_use":
++                inp = part.get("input", {})
++                if not isinstance(inp, dict):
++                    inp = {"value": inp}
++                st.markdown(
++                    f'<div class="msg-part-block">'
++                    f'<b>\U0001F527 \u5de5\u5177\u8c03\u7528</b>: '
++                    f'<code>{_esc(part.get("name", "?"))}</code><br/>'
++                    f'<pre style="margin:4px 0;padding:6px 8px;background:rgba(0,0,0,0.25);'
++                    f'border-radius:4px;font-size:11.5px;white-space:pre-wrap;'
++                    f'word-break:break-all">'
++                    f'{_esc(json.dumps(inp, ensure_ascii=False, indent=2)[:600])}'
++                    f'</pre></div>',
++                    unsafe_allow_html=True,
++                )
++            elif ptype == "tool_result":
++                res = part.get("content", "")
++                st.markdown(
++                    f'<div class="msg-part-block">'
++                    f'<b>\U0001F4E5 \u5de5\u5177\u7ed3\u679c</b>:'
++                    f'<pre style="margin:4px 0;padding:6px 8px;background:rgba(0,0,0,0.25);'
++                    f'border-radius:4px;font-size:11.5px;white-space:pre-wrap;'
++                    f'word-break:break-all">'
++                    f'{_esc(str(res)[:600])}</pre></div>',
++                    unsafe_allow_html=True,
++                )
++            else:
++                st.markdown(_esc(json.dumps(part, ensure_ascii=False)[:600]))
+     else:
+-        st.markdown(_esc(str(content)))
+-    # Close card
+-    st.markdown("</div></div>", unsafe_allow_html=True)
++        st.markdown(_esc(str(content_val)))
++    if tool_calls and isinstance(tool_calls, list):
++        for tc in tool_calls:
++            if not isinstance(tc, dict):
++                continue
++            name = tc.get("name", "tool")
++            args = tc.get("arguments", "")
++            if isinstance(args, str):
++                try:
++                    args = json.loads(args)
++                except (json.JSONDecodeError, TypeError):
++                    pass
++            with st.expander(f"\U0001F527 \u8c03\u7528 {name}"):
++                st.json(args)
++    st.markdown("</div>", unsafe_allow_html=True)
++    with st.expander("\U0001F4CB \u539f\u59cb JSON"):
++        st.json(msg)
++    st.markdown("</div>", unsafe_allow_html=True)
++
++
++
+ 
+ 
+ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
+@@ -1206,27 +1571,27 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
+     # Always-on: ancestor breadcrumb
+     # (ancestry shown via parent chip in header)
+ 
+-    # --- Input block (collapsible) ------------------------------------------
+-    input_open = True
+-    with st.expander("⬇  Input", expanded=input_open):
+-        if kind == "LLM":
+-            msgs = to_messages(canon(attrs, "messages.input"))
++        # --- Input / Output side-by-side (headers aligned; each side scrolls independently) --
++    c_in, c_out = st.columns(2, gap='medium')
++
++    with c_in:
++        st.markdown('<div class="io-col-head in-head">⬇  输入</div>', unsafe_allow_html=True)
++        if kind == 'LLM':
++            msgs = to_messages(canon(attrs, 'messages.input'))
+             if msgs:
+                 for m in msgs:
+-                    role = (m.get("role") or "user").lower()
+-                    content = m.get("content") or ""
+-                    _render_msg(role, content)
+-                    for tc in m.get("tool_calls") or []:
+-                        nm = tc.get("name") or "tool"
+-                        with st.expander(f"🔧 {nm}"):
+-                            st.json(tc.get("arguments"))
++                    _render_msg(m)
++                    for tc in m.get('tool_calls') or []:
++                        nm = tc.get('name') or 'tool'
++                        with st.expander(f'🔧 {nm}'):
++                            st.json(tc.get('arguments'))
+             else:
+-                _render_input_fallback(attrs, "input.value")
+-        elif kind == "TOOL":
+-            tp = canon(attrs, "tool.parameters")
+-            st.markdown("**Tool arguments:**")
++                _render_input_fallback(attrs, 'input.value')
++        elif kind == 'TOOL':
++            tp = canon(attrs, 'tool.parameters')
++            st.markdown('**工具参数：**')
+             if tp is None:
+-                st.caption("(no parameters captured)")
++                st.caption('（未捕获参数）')
+             elif isinstance(tp, str):
+                 try:
+                     st.json(json.loads(tp))
+@@ -1235,23 +1600,21 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
+             else:
+                 st.json(tp)
+         else:
+-            _render_input_fallback(attrs, "input.value")
++            _render_input_fallback(attrs, 'input.value')
+ 
+-    # --- Output block (collapsible) -----------------------------------------
+-    with st.expander("⬆  Output", expanded=True):
+-        if kind == "LLM":
+-            msgs = to_messages(canon(attrs, "messages.output"))
++    with c_out:
++        st.markdown('<div class="io-col-head out-head">⬆  输出</div>', unsafe_allow_html=True)
++        if kind == 'LLM':
++            msgs = to_messages(canon(attrs, 'messages.output'))
+             if msgs:
+                 for m in msgs:
+-                    role = (m.get("role") or "assistant").lower()
+-                    content = m.get("content") or ""
+-                    _render_msg(role, content)
++                    _render_msg(m)
+             else:
+-                _render_input_fallback(attrs, "output.value")
+-        elif kind == "TOOL":
+-            tout = canon(attrs, "tool.output")
++                _render_input_fallback(attrs, 'output.value')
++        elif kind == 'TOOL':
++            tout = canon(attrs, 'tool.output')
+             if tout is None:
+-                st.caption("(no result captured)")
++                st.caption('（未捕获返回结果）')
+             elif isinstance(tout, (dict, list)):
+                 st.json(tout)
+             elif isinstance(tout, str):
+@@ -1263,22 +1626,22 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
+                         st.code(str(parsed))
+                 except (json.JSONDecodeError, TypeError):
+                     if len(tout) > 6000:
+-                        st.code(tout[:6000] + "\n…(truncated)")
++                        st.code(tout[:6000] + '\n\u2026(truncated)')
+                     else:
+                         st.code(tout)
+             else:
+                 st.code(str(tout))
+         else:
+-            _render_input_fallback(attrs, "output.value")
++            _render_input_fallback(attrs, 'output.value')
+ 
+-    # --- Token breakdown (LLM) ----------------------------------------------
++# --- Token breakdown (LLM) ----------------------------------------------
+     if kind == "LLM":
+         items = [
+-            ("Input tokens",      canon(attrs, "tokens.input")),
+-            ("Output tokens",     canon(attrs, "tokens.output")),
+-            ("Total tokens",      canon(attrs, "tokens.total")),
+-            ("Cache read tokens", canon(attrs, "tokens.cache_read")),
+-            ("Reasoning tokens",  canon(attrs, "tokens.reasoning")),
++            ("输入 token",      canon(attrs, "tokens.input")),
++            ("输出 token",     canon(attrs, "tokens.output")),
++            ("总计 token",      canon(attrs, "tokens.total")),
++            ("缓存读取 token", canon(attrs, "tokens.cache_read")),
++            ("思考 token",  canon(attrs, "tokens.reasoning")),
+         ]
+         shown = [(k, v) for k, v in items if v is not None]
+         if shown:
+@@ -1287,13 +1650,13 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
+                 col.metric(k, _format_tokens(v))
+         cost = _estimate_cost(span, "tokens")
+         if cost is not None:
+-            st.caption(f"💰 estimated cost (this span): **${cost:.4f}**")
++            st.caption(f"💰 本 span 估计成本：**${cost:.4f}**")
+ 
+     # --- Flow state (events log) --------------------------------------------
+     events = span.get("events") or []
+-    with st.expander(f"⏱  Flow state ({len(events)} event(s))", expanded=False):
++    with st.expander(f"⏱  流程事件（{len(events)} 条）", expanded=False):
+         if not events:
+-            st.caption("(no span events recorded)")
++            st.caption("（未记录 span 事件）")
+         else:
+             for i, evt in enumerate(events):
+                 if not isinstance(evt, dict):
+@@ -1313,7 +1676,7 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
+ 
+     # --- Error block (only if span errored) ---------------------------------
+     if is_err and err:
+-        st.markdown("#### ⚠ Error")
++        st.markdown("#### ⚠ 错误")
+         head_bits = []
+         if err["exception_type"]:
+             head_bits.append(f"<b>{_esc(err['exception_type'])}</b>")
+@@ -1325,18 +1688,33 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
+             unsafe_allow_html=True,
+         )
+         if err["stack"]:
+-            st.markdown("**Stack trace:**")
++            st.markdown("**堆栈信息：**")
+             st.code(err["stack"], language="text")
+ 
+ 
+ def _render_input_fallback(attrs: dict, key: str) -> None:
++    """Smart fallback for input/output values.
++
++    If `val` is a JSON string we parse and render via st.json() for
++    structure; otherwise we fall back to st.code() with truncation.
++    """
+     val = attrs.get(key)
+     if val is None:
+-        st.caption(f"(no {key.split(chr(46))[0]} captured)")
++        st.caption(f"\uff08\u672a\u6355\u83b7 {key.split(chr(46))[0]} \uff09")
+         return
+     if isinstance(val, str):
+-        if len(val) > 4000:
+-            st.code(val[:4000] + "\n…(truncated)")
++        parsed = None
++        try:
++            cand = json.loads(val)
++            if isinstance(cand, (dict, list)):
++                parsed = cand
++        except (json.JSONDecodeError, TypeError, ValueError):
++            parsed = None
++        if parsed is not None:
++            st.json(parsed)
++        elif len(val) > 800:
++            st.code(val[:800])
++            st.caption("\u2026\uff08\u88ab\u622a\u65ad\uff09")
+         else:
+             st.code(val)
+     else:
+@@ -1371,9 +1749,9 @@ def _render_feedback_tab(span: dict) -> None:
+             '<div class="detail-card" style="text-align:center;color:#9ca3af;'
+             'padding:30px 16px;">'
+             '<div style="font-size:30px;">⭐</div>'
+-            '<div style="margin-top:6px;">No feedback recorded yet.</div>'
++            '<div style="margin-top:6px;">尚未记录反馈分数。</div>'
+             '<div style="margin-top:4px;font-size:11px;">'
+-            'Once you score this run, scores will appear here automatically.'
++            '一旦对该运行评分，分数会自动出现在这里。'
+             '</div></div>',
+             unsafe_allow_html=True,
+         )
+@@ -1400,15 +1778,15 @@ def _render_metadata_tab(span: dict) -> None:
+     attrs = span.get("attributes") or {}
+ 
+     st.markdown(
+-        '<div class="detail-card"><div class="detail-head">Identity</div>',
++        '<div class="detail-card"><div class="detail-head">基本信息</div>',
+         unsafe_allow_html=True,
+     )
+     rows = [
+         ("Trace ID", span.get("trace_id", "")),
+         ("Span ID", span.get("span_id", "")),
+-        ("Parent Span ID", span.get("parent_span_id") or "(root)"),
+-        ("Service", span.get("service_name") or "-"),
+-        ("Schema ver", str(span.get("schema_version", "-"))),
++        ("父 Span ID", span.get("parent_span_id") or "(根 span)"),
++        ("服务", span.get("service_name") or "-"),
++        ("法案版本", str(span.get("schema_version", "-"))),
+         ("Name", span.get("name", "-")),
+     ]
+     sid = canon(attrs, "session.id")
+@@ -1417,16 +1795,16 @@ def _render_metadata_tab(span: dict) -> None:
+     provider = canon(attrs, "model.provider")
+     tags = canon(attrs, "tags")
+     if sid:
+-        rows.append(("Session / Thread", sid))
++        rows.append(("会话 / 主题", sid))
+     if uid:
+-        rows.append(("User", uid))
++        rows.append(("用户", uid))
+     if model:
+         rows.append(("Model", f"{model}" + (f"  ({provider})" if provider else "")))
+     if tags:
+         if isinstance(tags, list):
+-            rows.append(("Tags", ", ".join(str(t) for t in tags)))
++            rows.append(("标签", ", ".join(str(t) for t in tags)))
+         else:
+-            rows.append(("Tags", str(tags)))
++            rows.append(("标签", str(tags)))
+     kv = '<div class="detail-kv">'
+     for k, v in rows:
+         kv += f'<div class="k">{_esc(k)}</div><div class="v">{_esc(v)}</div>'
+@@ -1435,18 +1813,18 @@ def _render_metadata_tab(span: dict) -> None:
+     st.markdown("</div>", unsafe_allow_html=True)
+ 
+     st.markdown(
+-        '<div class="detail-card"><div class="detail-head">Timing</div>',
++        '<div class="detail-card"><div class="detail-head">时间信息</div>',
+         unsafe_allow_html=True,
+     )
+     m1, m2, m3, m4 = st.columns(4)
+-    m1.metric("Duration", _format_duration_ms(dur_ms))
++    m1.metric("总时长", _format_duration_ms(dur_ms))
+     m2.metric("Start", _format_ts(start_ns))
+     m3.metric("End", _format_ts(end_ns))
+     m4.metric("Span ID", (span.get("span_id", "") or "")[:8] + "…")
+     st.markdown("</div>", unsafe_allow_html=True)
+ 
+     st.markdown(
+-        '<div class="detail-card"><div class="detail-head">All attributes (filtered)</div>',
++        '<div class="detail-card"><div class="detail-head">全部属性（过滤后）</div>',
+         unsafe_allow_html=True,
+     )
+     st.json(filter_visible_attrs(attrs, show_raw=False))
+@@ -1456,7 +1834,7 @@ def _render_metadata_tab(span: dict) -> None:
+ 
+     if span.get("events"):
+         st.markdown(
+-            '<div class="detail-card"><div class="detail-head">Span events</div>',
++            '<div class="detail-card"><div class="detail-head">Span 事件</div>',
+             unsafe_allow_html=True,
+         )
+         st.json(span.get("events"))
+@@ -1474,13 +1852,13 @@ def _render_metadata_panel(trace_kpi: TraceKPI, all_spans: list, *, by_id_all: d
+     # ---- TRACE section ----------------------------------------------------
+     label, cls = _status_label(trace_kpi.final_status)
+     rows_trace: list = []
+-    rows_trace.append(("Service", trace_kpi.service_name or "-"))
+-    rows_trace.append(("Span count", str(trace_kpi.n_spans)))
++    rows_trace.append(("服务", trace_kpi.service_name or "-"))
++    rows_trace.append(("Span 数量", str(trace_kpi.n_spans)))
+     rows_trace.append(("Start", _format_ts(trace_kpi.start_ns)))
+     rows_trace.append(("End",   _format_ts(trace_kpi.end_ns)))
+     rows_trace.append(("Duration", _format_duration_ms(trace_kpi.dur_ms)))
+-    rows_trace.append(("LLM / Tool", f"{trace_kpi.n_llm} / {trace_kpi.n_tool}"))
+-    rows_trace.append(("Chain / Agent / Prompt",
++    rows_trace.append(("大模型调用 / 工具", f"{trace_kpi.n_llm} / {trace_kpi.n_tool}"))
++    rows_trace.append(("链路 / 智能体 / 提示词",
+                        f"{trace_kpi.n_chain} / {trace_kpi.n_agent} / {trace_kpi.n_prompt}"))
+ 
+     st.markdown(
+@@ -1500,7 +1878,7 @@ def _render_metadata_panel(trace_kpi: TraceKPI, all_spans: list, *, by_id_all: d
+ 
+     # ---- TOKENS section ---------------------------------------------------
+     st.markdown(
+-        '<div class="meta-section"><h5>Tokens</h5>',
++        '<div class="meta-section"><h5>Token</h5>',
+         unsafe_allow_html=True,
+     )
+     if trace_kpi.tok_present:
+@@ -1518,14 +1896,14 @@ def _render_metadata_panel(trace_kpi: TraceKPI, all_spans: list, *, by_id_all: d
+             )
+     else:
+         st.markdown(
+-            '<div style="color:#6b7280;font-size:11.5px">no token data captured</div>',
++            '<div style="color:#6b7280;font-size:11.5px">未捕获 token 数据</div>',
+             unsafe_allow_html=True,
+         )
+     st.markdown("</div>", unsafe_allow_html=True)
+ 
+     # ---- COST section (estimated) -----------------------------------------
+     st.markdown(
+-        '<div class="meta-section"><h5>Cost (est.)</h5>',
++        '<div class="meta-section"><h5>成本（估计）</h5>',
+         unsafe_allow_html=True,
+     )
+     if trace_kpi.cost_usd > 0:
+@@ -1546,12 +1924,12 @@ def _render_metadata_panel(trace_kpi: TraceKPI, all_spans: list, *, by_id_all: d
+ 
+     # ---- SELECTED span section --------------------------------------------
+     st.markdown(
+-        '<div class="meta-section"><h5>Selected span</h5>',
++        '<div class="meta-section"><h5>选中的 Span</h5>',
+         unsafe_allow_html=True,
+     )
+     if not sel_span:
+         st.markdown(
+-            '<div style="color:#6b7280;font-size:11.5px">click a tree node</div>',
++            '<div style="color:#6b7280;font-size:11.5px">请在左侧树中选择一个 span</div>',
+             unsafe_allow_html=True,
+         )
+     else:
+@@ -1580,13 +1958,13 @@ def _render_span_meta(span: dict) -> None:
+     cost = _estimate_cost(span, "tokens")
+ 
+     rows = [
+-        ("Name", name),
+-        ("Kind", kind),
++        ("名称", name),
++        ("类型", kind),
+         ("Model", f"{model}" + (f"  ({provider})" if provider else "")),
+         ("Status", ""),
+         ("Start", _format_ts_ms(start_ns)),
+         ("End",   _format_ts_ms(end_ns)),
+-        ("Latency", _format_duration_ms(dur_ms)),
++        ("耗时", _format_duration_ms(dur_ms)),
+     ]
+     st.markdown(
+         f'<div style="margin-bottom:6px">'
+@@ -1614,7 +1992,7 @@ def _render_span_meta(span: dict) -> None:
+     elif tin is not None or tout is not None:
+         st.markdown(
+             f'<div class="meta-kv strong">'
+-            f'<div class="k">In / Out</div>'
++            f'<div class="k">输入 / 输出</div>'
+             f'<div class="v">{_esc(_format_tokens(tin))} / {_esc(_format_tokens(tout))}</div>'
+             f'</div>',
+             unsafe_allow_html=True,
+@@ -1633,48 +2011,53 @@ def _render_span_meta(span: dict) -> None:
+ # ===========================================================================
+ _dbg(f"BODY: sel_tid={st.session_state.selected_trace!r}, sel_spans count={len(sel_spans)}, first span kind={sel_spans[0].get("kind") if sel_spans else None!r}")
+ if not sel_spans:
+-    st.info("No spans in the current trace. Run your agent and refresh.")
++    st.info("当前 trace 中没有 span，请运行你的 agent 后刷新。")
+     st.stop()
+ 
+-col_tree, col_detail, col_meta = st.columns([1.1, 2.6, 1.3])
+-
+-
+-# ===========================================================================
+-# LEFT column - navigation tree
+-# ===========================================================================
+-with col_tree:
+-    st.markdown(
+-        f"#### 🗂 Navigation Tree "
+-        f'<span style="color:#9ca3af;font-size:11px;font-weight:400">'
+-        f'· {len(filtered_spans)} spans</span>',
+-        unsafe_allow_html=True,
+-    )
+-
+-    def _select_only(sid: str) -> None:
+-        st.session_state.selected_span = sid
++if st.session_state.view_mode == '列表':
++    col_tree, col_detail, col_meta = st.columns([1.1, 2.6, 1.3])
+ 
+-    def _toggle_expand(sid: str) -> None:
+-        if sid in st.session_state.expanded_spans:
+-            st.session_state.expanded_spans.discard(sid)
+-        else:
+-            st.session_state.expanded_spans.add(sid)
+-
+-    _render_tree(roots, children_map, depth=0)
+-
+-
+-# ===========================================================================
+-# CENTER column - detail panel (Run / Feedback / Metadata)
+-# ===========================================================================
+-with col_detail:
+-    st.markdown("#### 🔍 Span Detail")
+-    _render_detail_panel(sel_spans, by_id_all={s["span_id"]: s for s in sel_spans})
++    # =======================================================================
++    # LEFT column - navigation tree
++    # =======================================================================
++    with col_tree:
++        st.markdown(
++            f'#### 🗂 导航树 '
++            f'<span style="color:#9ca3af;font-size:11px;font-weight:400">'
++            f'· {len(filtered_spans)} spans</span>',
++            unsafe_allow_html=True,
++        )
+ 
++        def _select_only(sid):
++            st.session_state.selected_span = sid
+ 
+-# ===========================================================================
+-# RIGHT column - metadata indicator panel
+-# ===========================================================================
+-with col_meta:
+-    st.markdown("#### 📊 Metadata")
+-    _render_metadata_panel(kpi, sel_spans, by_id_all={s["span_id"]: s for s in sel_spans})
++        def _toggle_expand(sid):
++            if sid in st.session_state.expanded_spans:
++                st.session_state.expanded_spans.discard(sid)
++            else:
++                st.session_state.expanded_spans.add(sid)
++
++        _render_tree(roots, children_map, depth=0)
++
++    # =======================================================================
++    # CENTER column - detail panel
++    # =======================================================================
++    with col_detail:
++        st.markdown('#### 🔍 Span 详情')
++        _render_detail_panel(sel_spans, by_id_all={s['span_id']: s for s in sel_spans})
++
++    # =======================================================================
++    # RIGHT column - metadata indicator panel
++    # =======================================================================
++    with col_meta:
++        st.markdown('#### 📊 元数据面板')
++        _render_metadata_panel(kpi, sel_spans, by_id_all={s['span_id']: s for s in sel_spans})
++
++else:  # 流程图 mode
++    _render_flowchart_mode(
++        sel_spans,
++        kpi,
++        all_by_id={s['span_id']: s for s in sel_spans},
++    )
+ 
+ 
