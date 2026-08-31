@@ -1232,7 +1232,30 @@ def _render_mermaid_html(src, *, height=620, key_prefix='m'):
         'lineColor:"#64748b",fontFamily:"ui-system,system-ui,sans-serif"},'
         'flowchart:{curve:"basis",htmlLabels:true,useMaxWidth:true},'
         'securityLevel:"loose"})'
-        '.then(function(){document.querySelectorAll(".mermaid .node").forEach(function(node){node.addEventListener("click",function(){var id=node.id||(node.querySelector("[id]")?node.querySelector("[id]").id:"");var m=id.match(/n_[A-Za-z0-9_]+/);if(m)window.focusSpan(m[0]);});});});'
+        '.then(function(){'
+        '  document.querySelectorAll(".mermaid .node").forEach(function(node){'
+        '    node.addEventListener("click",function(ev){'
+        '      var t=ev.currentTarget;'
+        '      var sid=t.getAttribute("data-span-id")||(t.dataset&&t.dataset.spanId)||"";'
+        '      if(!sid){'
+        '        var id=t.id||(t.querySelector("[id]")?t.querySelector("[id]").id:"");'
+        '        var m=(id||"").match(/n_[A-Za-z0-9_]+/);'
+        '        if(m)sid=m[0];'
+        '      }'
+        '      if(sid)window.focusSpan(sid);'
+        '    });'
+        '  });'
+        '});'
+        '.then(function(){'
+        '  document.querySelectorAll(".mermaid .node").forEach(function(node){'
+        '    if(node.getAttribute("data-span-id"))return;'
+        '    var id=node.id||(node.querySelector("[id]")?node.querySelector("[id]").id:"");'
+        '    var m=(id||"").match(/n_[A-Za-z0-9_]+/);'
+        '    if(!m)return;'
+        '    var sid=m[0].slice(2).replace(/_/g,"-");'
+        '    node.setAttribute("data-span-id",sid);'
+        '  });'
+        '});'
         '</script>\n</body></html>')
     st.components.v1.html(html_doc, height=height, scrolling=True)
 
@@ -1246,11 +1269,11 @@ def _render_flowchart_mode(sel_spans, kpi, all_by_id):
             all_by_id = {s['span_id']: s for s in sel_spans}
             kpi = _aggregate_kpi(sel_spans)
     focus = st.query_params.get('focus')
-    col_left, col_center, col_right = st.columns([1.1, 2.5, 1.3])
+    col_left, col_center, col_right = st.columns([1.1, 1.8, 2.6])  # trace list / flowchart / span detail; right panel fixed at 2.60
     with col_left:
         _render_trace_cards_list()
     with col_center:
-        _render_flowchart_center(sel_spans)
+        _render_flowchart_center(sel_spans, focus=focus)
     with col_right:
         _render_detail_column(sel_spans, all_by_id, focus)
 
@@ -1279,31 +1302,37 @@ def _render_trace_cards_list():
         st.markdown('</div>', unsafe_allow_html=True)
 
 
-def _render_flowchart_center(sel_spans):
+def _render_flowchart_center(sel_spans, *, focus=None):
+    """Render the Mermaid flowchart. Pass focus=<span_id> to highlight the matching node (yellow border via the focus classDef)."""
     st.markdown('#### 🔀 Agent 流程图')
     st.caption(
         f'共 {len(sel_spans)} 个 span。'
         '点击节点查看详情；'
         '上方为起始时间最早的节点。'
     )
-    _render_mermaid_html(_build_mermaid(sel_spans, focus=None), height=720, key_prefix='explorer')
+    _render_mermaid_html(_build_mermaid(sel_spans, focus=focus), height=720, key_prefix='explorer')
 
 
 def _render_detail_column(sel_spans, all_by_id, focus):
+    """Render the span-detail column. focus (URL ?focus=) is the single source of truth."""
     st.markdown('#### 🔍 Span 详情')
+
     if focus and focus in all_by_id:
         if st.button('← 返回全貌', key='back_to_overview'):
             _clear_focus()
         st.session_state.selected_span = focus
-    elif st.session_state.selected_span and st.session_state.selected_span in all_by_id:
-        pass
     else:
-        roots = [s for s in sel_spans if not s.get('parent_span_id')]
-        if roots:
-            st.session_state.selected_span = roots[0]['span_id']
+        if focus:
+            _clear_focus()
+            focus = None
+        if st.session_state.selected_span and st.session_state.selected_span in all_by_id:
+            pass
+        else:
+            roots = [s for s in sel_spans if not s.get('parent_span_id')]
+            if roots:
+                st.session_state.selected_span = roots[0]['span_id']
+
     _render_detail_panel(sel_spans, by_id_all=all_by_id)
-    if focus and focus not in all_by_id:
-        _clear_focus()
 
 
 def _jump_to_span(span_id):
