@@ -49,10 +49,28 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from viewer.canonical  import SPAN_KINDS, COLORS
 from viewer.normalize  import canon, friendly_name, span_kind, to_messages
 from viewer.visibility import is_span_visible, filter_visible_attrs
+
+
+# ---------------------------------------------------------------------------
+# Bidirectional mermaid-flowchart component (click a span node -> the detail
+# column updates WITHOUT a full-page reload).  The frontend lives in
+# flowchart_component/ and talks back through the v1 component postMessage
+# protocol; the click handler sends streamlit:setComponentValue which triggers
+# a normal (no-navigation) rerun.
+# ---------------------------------------------------------------------------
+_COMPONENT_DIR = Path(__file__).resolve().parent / "flowchart_component"
+if (_COMPONENT_DIR / "index.html").is_file():
+    _flowchart_component = components.declare_component(
+        "agent_flowchart", path=str(_COMPONENT_DIR)
+    )
+else:
+    _flowchart_component = None
+
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +254,8 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 }
 [data-testid="stElementContainer"][class*="st-key-trace_card_"] button[data-testid="stBaseButton-secondary"] {
     background: transparent !important;
-    color: #d1d5db !important;
+    color: #111827 !important;
+    font-weight: 700 !important;
 }
 [data-testid="stElementContainer"][class*="st-key-trace_card_"] button[data-testid="stBaseButton-secondary"]:hover {
     background: rgba(255,255,255,0.04) !important;
@@ -1275,40 +1294,53 @@ def _build_mermaid(spans, *, focus=None, hops=2):
     return '\n'.join(out)
 
 
-def _render_mermaid_html(src, *, height=620, key_prefix='m'):
-    js_src = src.replace('\\', '\\\\').replace('`', '\\`').replace('${', '\\${')
-    html_doc = (
-        '<!DOCTYPE html>\n<html><head><meta charset="utf-8">\n<style>\n'
-        'body{margin:0;padding:8px;background:transparent;color:#e5e7eb;font-family:ui-system,system-ui,sans-serif;}\n'
-        '.mermaid{background:rgba(255,255,255,0.02);border-radius:8px;padding:8px;overflow-x:auto;}\n'
-        '.node{cursor:pointer;}\n'
-        '.node:hover rect,.node:hover polygon{filter:brightness(1.25);}\n'
-        '</style>\n'
-        '<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>\n'
-        '</head><body>\n'
-        '<div class="mermaid" id="m_' + key_prefix + '">\n'
-        + js_src + '\n'
-        '</div>\n<script>\n'
-        'window.focusSpan=function(nodeId){'
-        'var spanId=(nodeId||"").replace(/^n_/,"").replace(/_/g,"-");'
-        'if(!spanId)return;'
-        'var url=new URL(window.top.location.href);'
-        'url.searchParams.set("focus",spanId);'
-        'try{window.top.location.href=url.toString();}'
-        'catch(e1){try{window.parent.location.href=url.toString();}catch(e2){window.location.href=url.toString();}}'
-        '};'
-        'mermaid.initialize({startOnLoad:true,theme:"dark",'
-        'themeVariables:{background:"#0f172a",primaryColor:"#1e293b",'
-        'primaryTextColor:"#e5e7eb",primaryBorderColor:"#334155",'
-        'lineColor:"#64748b",fontFamily:"ui-system,system-ui,sans-serif"},'
-        'flowchart:{curve:"basis",htmlLabels:true,useMaxWidth:true},'
-        'securityLevel:"loose"})'
-        '.then(function(){document.querySelectorAll(".mermaid .node").forEach(function(node){node.addEventListener("click",function(){var id=node.id||(node.querySelector("[id]")?node.querySelector("[id]").id:"");var m=id.match(/n_[A-Za-z0-9_]+/);if(m)window.focusSpan(m[0]);});});});'
-        '</script>\n</body></html>')
-    st.components.v1.html(html_doc, height=height, scrolling=True)
+def _render_flowchart_component(sel_spans, *, focus=None, trace_id=''):
+    """Render the mermaid flowchart inside a bidirectional component.
+
+    Clicking a span node makes the frontend send the span_id back via the
+    component protocol -> Streamlit reruns in-place (NO full-page reload) ->
+    ``st.session_state.selected_span`` is updated -> the right-hand detail
+    column switches to that span.  The URL is only synced for deep-linking;
+    it is never used to navigate the page.
+    """
+    if _flowchart_component is None:
+        st.warning('未找到 flowchart_component/，无法渲染流程图。')
+        return
+    sel_ids = {s['span_id'] for s in sel_spans}
+    # Always render the FULL flowchart (no click-to-zoom).  Clicking a node
+    # only highlights it and switches the right-hand detail; the middle column
+    # keeps showing every span node as the user expects.
+    mermaid_src = _build_mermaid(sel_spans, focus=None)
+    clicked = _flowchart_component(
+        mermaid_src=mermaid_src,
+        focus=focus or '',
+        trace_id=trace_id or '',
+        default=None,
+        key=f'flowchart_{trace_id or "default"}',
+    )
+    if isinstance(clicked, dict) and clicked.get('span_id'):
+        # The component keeps the last sent value across reruns.  Deduplicate
+        # with the per-click timestamp so a *stale* value never re-selects a
+        # span (e.g. right after "back to overview"), while a *new* click on
+        # the same span still works.
+        ts = clicked.get('ts')
+        if ts is not None and ts != st.session_state.get('_last_flow_click_ts'):
+            st.session_state._last_flow_click_ts = ts
+            sid = str(clicked['span_id'])
+            if sid in sel_ids:
+                st.session_state.selected_span = sid
+                # Sync URL for deep-linking only — st.query_params updates go
+                # through the frontend history API and do NOT reload the page.
+                if st.query_params.get('focus') != sid:
+                    st.query_params['focus'] = sid
+                if trace_id and st.query_params.get('trace') != trace_id:
+                    st.query_params['trace'] = trace_id
 
 
 def _render_flowchart_mode(sel_spans, kpi, all_by_id):
+    # Restore the trace from the URL after a page reload / deep link.  The URL
+    # is only READ here (never navigated to), so this cannot cause the
+    # "click -> page jumps" behaviour.
     _url_trace = st.query_params.get('trace')
     if _url_trace and _url_trace in traces:
         if st.session_state.selected_trace != _url_trace:
@@ -1316,14 +1348,29 @@ def _render_flowchart_mode(sel_spans, kpi, all_by_id):
             sel_spans = traces[_url_trace]
             all_by_id = {s['span_id']: s for s in sel_spans}
             kpi = _aggregate_kpi(sel_spans)
-    focus = st.query_params.get('focus')
-    col_left, col_center, col_right = st.columns([1.1, 2.5, 1.3])
+    # Deep-link focus: apply ?focus= exactly once per session (right after a
+    # page reload).  Afterwards, st.session_state.selected_span is the single
+    # source of truth; "back to overview" must not be undone by a stale URL.
+    if not st.session_state.get('_url_focus_applied'):
+        f = st.query_params.get('focus')
+        if f and f in all_by_id:
+            st.session_state.selected_span = f
+        st.session_state._url_focus_applied = True
+    cur_sel = st.session_state.selected_span
+    if cur_sel and cur_sel not in all_by_id:
+        st.session_state.selected_span = None
+        cur_sel = None
+    col_left, col_center, col_right = st.columns([1.1, 1.8, 2.6])  # trace list / flowchart / span detail; right panel fixed at 2.60
     with col_left:
         _render_trace_cards_list()
     with col_center:
-        _render_flowchart_center(sel_spans)
+        _render_flowchart_center(
+            sel_spans,
+            focus=cur_sel or None,
+            trace_id=st.session_state.selected_trace,
+        )
     with col_right:
-        _render_detail_column(sel_spans, all_by_id, focus)
+        _render_detail_column(sel_spans, all_by_id)
 
 
 def _render_trace_cards_list():
@@ -1355,31 +1402,34 @@ def _render_trace_cards_list():
             )
 
 
-def _render_flowchart_center(sel_spans):
+def _render_flowchart_center(sel_spans, *, focus=None, trace_id=''):
+    """Render the Mermaid flowchart. Pass focus=<span_id> to highlight the matching node (yellow border via the focus classDef)."""
     st.markdown('#### 🔀 Agent 流程图')
     st.caption(
         f'共 {len(sel_spans)} 个 span。'
         '点击节点查看详情；'
         '上方为起始时间最早的节点。'
     )
-    _render_mermaid_html(_build_mermaid(sel_spans, focus=None), height=720, key_prefix='explorer')
+    _render_flowchart_component(sel_spans, focus=focus, trace_id=trace_id)
 
 
-def _render_detail_column(sel_spans, all_by_id, focus):
+def _render_detail_column(sel_spans, all_by_id):
+    """Render the span-detail column. ``st.session_state.selected_span`` is the
+    single source of truth (updated by flowchart node clicks, no page reload)."""
     st.markdown('#### 🔍 Span 详情')
-    if focus and focus in all_by_id:
-        if st.button('← 返回全貌', key='back_to_overview'):
-            _clear_focus()
-        st.session_state.selected_span = focus
-    elif st.session_state.selected_span and st.session_state.selected_span in all_by_id:
-        pass
+
+    sel = st.session_state.selected_span
+    roots = [s for s in sel_spans if not s.get('parent_span_id')]
+    root_id = roots[0]['span_id'] if roots else None
+    if sel and sel in all_by_id:
+        if sel != root_id:
+            if st.button('← 返回全貌', key='back_to_overview'):
+                _clear_focus()
     else:
-        roots = [s for s in sel_spans if not s.get('parent_span_id')]
-        if roots:
-            st.session_state.selected_span = roots[0]['span_id']
+        if root_id:
+            st.session_state.selected_span = root_id
+
     _render_detail_panel(sel_spans, by_id_all=all_by_id)
-    if focus and focus not in all_by_id:
-        _clear_focus()
 
 
 def _jump_to_span(span_id):
@@ -1388,6 +1438,7 @@ def _jump_to_span(span_id):
 
 
 def _clear_focus():
+    st.session_state.selected_span = None
     if 'focus' in st.query_params:
         del st.query_params['focus']
     st.rerun()

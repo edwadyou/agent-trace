@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  body{margin:0;padding:8px;background:transparent;color:#e5e7eb;font-family:ui-system,system-ui,sans-serif;}
+  .mermaid{background:rgba(255,255,255,0.02);border-radius:8px;padding:8px;overflow-x:auto;}
+  .node{cursor:pointer;}
+  .node:hover rect,.node:hover polygon{filter:brightness(1.25);}
+  /* 点击后本地即时高亮 */
+  g.focused-node rect, g.focused-node polygon{stroke:#facc15 !important;stroke-width:3px !important;}
+</style>
+<script src="mermaid.min.js"></script>
+</head>
+<body>
+<div id="m_container"></div>
+<script>
+(function(){
+  // ---------- Streamlit v1 组件双向通信（手写 postMessage 协议，零外部依赖） ----------
+  function send(type, data){
+    var out = Object.assign({isStreamlitMessage:true, type:type}, data||{});
+    window.parent.postMessage(out, "*");
+  }
+  function setValue(v){ send("streamlit:setComponentValue", {value:v, dataType:"json"}); }
+  function setHeight(h){ send("streamlit:setFrameHeight", {height: h}); }
+  send("streamlit:componentReady", {apiVersion:1});
+
+  var currentSrc = "";
+  var mermaidInitialized = false;
+
+  function spanIdOf(node){
+    var d = node.getAttribute("data-span-id");
+    if(d) return d;
+    var id = node.id || (node.querySelector("[id]") ? node.querySelector("[id]").id : "");
+    var m = (id||"").match(/n_[A-Za-z0-9_]+/);
+    if(m) return m[0].replace(/^n_/,"").replace(/_/g,"-");
+    return "";
+  }
+
+  function applyFocus(focus){
+    document.querySelectorAll("#m_container .node").forEach(function(n){
+      var sid = spanIdOf(n);
+      if(sid) n.classList.toggle("focused-node", focus ? (sid === focus) : false);
+    });
+  }
+
+  function bindNode(node, traceId){
+    if(node.getAttribute("data-bound")) return;
+    node.setAttribute("data-bound","1");
+    if(!node.getAttribute("data-span-id")){
+      var s = spanIdOf(node); if(s) node.setAttribute("data-span-id", s);
+    }
+    node.addEventListener("click", function(ev){
+      var s = node.getAttribute("data-span-id") || spanIdOf(node);
+      if(!s) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      applyFocus(s);                                  // 本地即时高亮（无需等后端）
+      // ts 每次点击都不同 -> Python 端能区分"新点击"与"旧值残留"，
+      // 从而支持：点击节点 -> 返回全貌 -> 再点同一节点 的完整循环。
+      setValue({span_id: s, trace_id: traceId || "", ts: Date.now()});
+    });
+  }
+
+  function scan(traceId){
+    document.querySelectorAll("#m_container .node").forEach(function(n){ bindNode(n, traceId); });
+  }
+
+  function ensureMermaid(){
+    if(mermaidInitialized || typeof mermaid === "undefined") return;
+    mermaidInitialized = true;
+    mermaid.initialize({
+      startOnLoad:false,
+      theme:"dark",
+      themeVariables:{background:"#0f172a",primaryColor:"#1e293b",primaryTextColor:"#e5e7eb",primaryBorderColor:"#334155",lineColor:"#64748b",fontFamily:"ui-system,system-ui,sans-serif"},
+      flowchart:{curve:"basis",htmlLabels:true,useMaxWidth:true},
+      securityLevel:"loose"
+    });
+  }
+
+  function onRender(event){
+    var data = event && event.data;
+    if(!data || data.type !== "streamlit:render") return;
+    var args = data.args || {};
+    var src = args.mermaid_src || "";
+    var focus = args.focus || "";
+    var traceId = args.trace_id || "";
+    if(!src) return;
+
+    var container = document.getElementById("m_container");
+    if(src === currentSrc && container.querySelector("svg")){
+      // 数据未变化：只更新焦点高亮，不重绘（避免点击后流程图闪烁）
+      applyFocus(focus);
+      scan(traceId);
+      setHeight(Math.max(document.documentElement.scrollHeight, container.scrollHeight, 300));
+      return;
+    }
+    currentSrc = src;
+    container.innerHTML = "";
+    var pre = document.createElement("div");
+    pre.className = "mermaid";
+    pre.textContent = src;   // 用 textContent 避免 src 中的 <br/> 等被当作 HTML 提前解析
+    container.appendChild(pre);
+    ensureMermaid();
+    if(typeof mermaid === "undefined"){
+      container.innerHTML = "<pre style='color:#f87171;'>mermaid.min.js 加载失败，请检查 flowchart_component/mermaid.min.js</pre>";
+      setHeight(120);
+      return;
+    }
+    mermaid.run({nodes:[pre]}).then(function(){
+      scan(traceId);
+      applyFocus(focus);
+      setHeight(Math.max(document.documentElement.scrollHeight, container.scrollHeight, 300));
+    }).catch(function(err){
+      container.innerHTML = "<pre style='color:#f87171;white-space:pre-wrap;'>流程图渲染失败：\n" +
+        ((err && err.message) ? String(err.message) : String(err)) + "</pre>";
+      setHeight(200);
+    });
+  }
+
+  window.addEventListener("message", onRender);
+})();
+</script>
+</body>
+</html>
