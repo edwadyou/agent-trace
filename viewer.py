@@ -71,6 +71,23 @@ else:
 
 
 # ---------------------------------------------------------------------------
+# Bidirectional mermaid-flowchart component (click a span node -> the detail
+# column updates WITHOUT a full-page reload).  The frontend lives in
+# flowchart_component/ and talks back through the v1 component postMessage
+# protocol; the click handler sends streamlit:setComponentValue which triggers
+# a normal (no-navigation) rerun.
+# ---------------------------------------------------------------------------
+_COMPONENT_DIR = Path(__file__).resolve().parent / "flowchart_component"
+if (_COMPONENT_DIR / "index.html").is_file():
+    _flowchart_component = components.declare_component(
+        "agent_flowchart", path=str(_COMPONENT_DIR)
+    )
+else:
+    _flowchart_component = None
+
+
+
+# ---------------------------------------------------------------------------
 # Page setup
 # ---------------------------------------------------------------------------
 REFRESH_MS = int(os.environ.get("REFRESH_MS", "3000"))
@@ -251,7 +268,8 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 }
 [data-testid="stElementContainer"][class*="st-key-trace_card_"] button[data-testid="stBaseButton-secondary"] {
     background: transparent !important;
-    color: #d1d5db !important;
+    color: #111827 !important;
+    font-weight: 700 !important;
 }
 [data-testid="stElementContainer"][class*="st-key-trace_card_"] button[data-testid="stBaseButton-secondary"]:hover {
     background: rgba(255,255,255,0.04) !important;
