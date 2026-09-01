@@ -176,15 +176,86 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 }
 
 /* ----- trace card list (flowchart explorer left column) ----- */
-.trace-card {
+
+/* Scrollable wrapper around the trace list. Constrains the column to a
+   viewport-relative height so the user can scroll through traces WITHOUT
+   scrolling the page body — the center agent flow and right span
+   detail panes stay fixed and visible. */
+.st-key-trace_list_scroll {
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 4px 6px 0;
+    margin-top: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.22) transparent;
+}
+.st-key-trace_list_scroll::-webkit-scrollbar { width: 6px; }
+.st-key-trace_list_scroll::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.20);
+    border-radius: 3px;
+}
+.st-key-trace_list_scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.35);
+}
+.st-key-trace_list_scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* Each trace is rendered as a Streamlit button whose key is
+   `trace_card_<tid>`. Streamlit turns that key into the wrapper class
+   `st-key-trace_card_<sanitized_tid>` on the element container. We
+   style that container as a compact card. The previous empty
+   `<div class="trace-card">` HTML wrappers were broken (the button
+   rendered as a sibling, not a child) and have been removed. */
+[data-testid="stElementContainer"][class*="st-key-trace_card_"] {
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 8px;
-    padding: 6px 8px;
-    margin-bottom: 6px;
+    border-radius: 6px;
+    padding: 0;
+    margin: 0 0 4px 0;
+    transition: background 0.15s ease, border-color 0.15s ease;
 }
-.trace-card-active {
-    border-color: rgba(59,130,246,0.55);
+[data-testid="stElementContainer"][class*="st-key-trace_card_"]:hover {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.18);
+}
+[data-testid="stElementContainer"][class*="st-key-trace_card_"] [data-testid="stButton"] {
+    margin: 0;
+}
+[data-testid="stElementContainer"][class*="st-key-trace_card_"] button {
+    padding: 4px 10px !important;
+    font-size: 12px !important;
+    line-height: 1.2 !important;
+    min-height: 26px !important;
+    border: none !important;
+    text-align: left;
+    font-family: ui-monospace, "JetBrains Mono", "Cascadia Code", Consolas, monospace !important;
+    width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+[data-testid="stElementContainer"][class*="st-key-trace_card_"] button[data-testid="stBaseButton-secondary"] {
+    background: transparent !important;
+    color: #d1d5db !important;
+}
+[data-testid="stElementContainer"][class*="st-key-trace_card_"] button[data-testid="stBaseButton-secondary"]:hover {
+    background: rgba(255,255,255,0.04) !important;
+    color: #f3f4f6 !important;
+}
+[data-testid="stElementContainer"][class*="st-key-trace_card_"] button:focus-visible {
+    outline: 1px solid rgba(59,130,246,0.55);
+    outline-offset: -1px;
+}
+
+/* Active (primary) trace button — subtle blue accent so it stands out
+   from the secondary cards without clashing with the dark theme. */
+[data-testid="stElementContainer"][class*="st-key-trace_card_"] button[data-testid="stBaseButton-primary"] {
+    background: rgba(59,130,246,0.22) !important;
+    color: #dbeafe !important;
+    font-weight: 600 !important;
+}
+[data-testid="stElementContainer"][class*="st-key-trace_card_"]:has(button[data-testid="stBaseButton-primary"]) {
+    border-color: rgba(59,130,246,0.65);
     background: rgba(59,130,246,0.10);
 }
 
@@ -1262,21 +1333,26 @@ def _render_trace_cards_list():
         return
     cur_tid = st.session_state.selected_trace
     sorted_tids = sorted(traces.keys(), key=_trace_start_ns)
-    for tid in sorted_tids:
-        row = _fmt_trace_option(tid)
-        is_cur = (tid == cur_tid)
-        btn_type = 'primary' if is_cur else 'secondary'
-        active_cls = ' trace-card-active' if is_cur else ''
-        st.markdown(f'<div class="trace-card{active_cls}">', unsafe_allow_html=True)
-        st.button(
-            row,
-            key=f'trace_card_{tid}',
-            type=btn_type,
-            use_container_width=True,
-            on_click=_select_trace,
-            args=(tid,),
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
+    # Outer scrollable wrapper. CSS targets `.st-key-trace_list_scroll`
+    # with `max-height: calc(100vh - 200px); overflow-y: auto;` so the
+    # trace list scrolls internally and the page body (center agent flow
+    # + right span detail) stays fixed in place. Each trace button below
+    # gets key `trace_card_<tid>`, which Streamlit turns into the
+    # wrapper class `st-key-trace_card_<sanitized_tid>` we style as a
+    # compact card.
+    with st.container(key="trace_list_scroll"):
+        for tid in sorted_tids:
+            row = _fmt_trace_option(tid)
+            is_cur = (tid == cur_tid)
+            btn_type = 'primary' if is_cur else 'secondary'
+            st.button(
+                row,
+                key=f'trace_card_{tid}',
+                type=btn_type,
+                use_container_width=True,
+                on_click=_select_trace,
+                args=(tid,),
+            )
 
 
 def _render_flowchart_center(sel_spans):
