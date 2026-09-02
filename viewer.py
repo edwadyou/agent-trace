@@ -114,10 +114,7 @@ except Exception:
 try:
     from streamlit_autorefresh import st_autorefresh
     st_autorefresh(interval=REFRESH_MS, limit=None, key="auto_refresh")
-    _autokind = "streamlit-autorefresh"
 except ImportError:
-    import streamlit.components.v1 as components
-    _autokind = "iframe-poll"
     components.html(
         "<script>setTimeout(function(){window.parent.location.reload();}, "
         + str(REFRESH_MS) + ");</script>",
@@ -268,7 +265,9 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 }
 [data-testid="stElementContainer"][class*="st-key-trace_card_"] button[data-testid="stBaseButton-secondary"] {
     background: transparent !important;
-    color: #111827 !important;
+    /* Light gray so the inactive trace-card label stays readable on the
+       semi-transparent card sitting on a dark page background. */
+    color: #e5e7eb !important;
     font-weight: 700 !important;
 }
 [data-testid="stElementContainer"][class*="st-key-trace_card_"] button[data-testid="stBaseButton-secondary"]:hover {
@@ -292,7 +291,6 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
     background: rgba(59,130,246,0.10);
 }
 
-/* ----- right metadata panel ----- */
 /* ----- right metadata panel ----- */
 .meta-wrap {
     background: rgba(255,255,255,0.03);
@@ -600,27 +598,33 @@ _COST_PER_1K = {
 }
 
 
-def _estimate_cost(span: dict, attr_key: str) -> float | None:
-    """Return USD estimate for an LLM span, or None if unknown."""
+def _estimate_cost(span: dict) -> float | None:
+    """Return USD estimate for an LLM span, or None if unknown.
+
+    Looks up canonical token counts (``canon(attrs, 'tokens.input')`` and
+    ``canon(attrs, 'tokens.output')``) and multiplies by the per-1k rate
+    for the (provider, model) pair. The previous implementation tried
+    an ``attr_key`` prefix (``"tokens." + ".tokens.input"``) that no
+    caller ever populated correctly; the dead branch has been removed.
+    """
     attrs = span.get("attributes") or {}
     model = canon(attrs, "model") or ""
     provider = (canon(attrs, "model.provider") or "").lower()
     model_l = model.lower()
-    # Match by provider + model
     rates = _COST_PER_1K.get((provider, model_l))
     if rates is None:
-        # Try by model only (skip provider)
-        for (p, m), r in _COST_PER_1K.items():
+        # Fallback: match by model only (provider unknown in some traces)
+        for (prov, m), r in _COST_PER_1K.items():
             if m == model_l:
                 rates = r
                 break
     if rates is None:
         return None
-    tin = canon(attrs, attr_key + ".tokens.input") or canon(attrs, "tokens.input")
-    tout = canon(attrs, attr_key + ".tokens.output") or canon(attrs, "tokens.output")
+    tin = canon(attrs, "tokens.input")
+    tout = canon(attrs, "tokens.output")
     if not isinstance(tin, int) and not isinstance(tout, int):
         return None
-    cost_in = (tin or 0) / 1000.0 * rates[0]
+    cost_in  = (tin  or 0) / 1000.0 * rates[0]
     cost_out = (tout or 0) / 1000.0 * rates[1]
     return round(cost_in + cost_out, 4)
 
@@ -674,7 +678,7 @@ def _aggregate_kpi(spans: list) -> TraceKPI:
                 k.t_in += tin; k.tok_present = True
             if isinstance(tout, int):
                 k.t_out += tout; k.tok_present = True
-            cost = _estimate_cost(s, "tokens")
+            cost = _estimate_cost(s)
             if cost is not None:
                 k.cost_usd += cost
         elif kind == "TOOL":
@@ -765,11 +769,15 @@ def load_traces(path_str: str) -> tuple:
             except json.JSONDecodeError:
                 dropped += 1
                 continue
+            # If migration fails we drop the row rather than letting an
+            # un-migrated (and likely malformed) record corrupt the rest
+            # of the trace with a missing schema_version / service_name.
             if _migrate_record is not None:
                 try:
                     span = _migrate_record(span)
                 except Exception:
-                    pass
+                    dropped += 1
+                    continue
             tid = span.get("trace_id")
             if not tid:
                 dropped += 1
@@ -1517,8 +1525,8 @@ def _render_detail_panel(all_spans: list, *, by_id_all: dict) -> None:
         f'    </span>'
         f'  </div>'
         f'  <div class="detail-sub">'
-        f'    {_format_duration_ms(dur_ms)}  ·  span_id={_esc(sel_span.get("span_id",""))[:16]}…'
-        f'    {("  ·  parent=" + _esc(sel_span.get("parent_span_id") or "(root)")[:16] + "…") if sel_span.get("parent_span_id") else ""}'
+        f'    {_format_duration_ms(dur_ms)}  ·  span_id={_esc((sel_span.get("span_id","") or "")[:16])}…'
+        f'    {("  ·  parent=" + _esc((sel_span.get("parent_span_id") or "")[:16]) + "…") if sel_span.get("parent_span_id") else ""}'
         f'  </div>'
         f'</div>',
         unsafe_allow_html=True,
@@ -1537,6 +1545,33 @@ def _render_detail_panel(all_spans: list, *, by_id_all: dict) -> None:
     # ---- Metadata tab ------------------------------------------------------
     with tabs[2]:
         _render_metadata_tab(sel_span)
+
+
+def _try_parse_json_string(s):
+    """If *s* is a JSON string (optionally wrapped in a ```json ... ```
+    code fence), return the parsed object; otherwise return None.
+
+    Used to expand inline JSON embedded inside LLM message ``content``
+    into a collapsible tree instead of showing it as one raw string.
+    """
+    if not isinstance(s, str):
+        return None
+    t = s.strip()
+    # strip ```json ... ``` / ``` ... ``` fences
+    if t.startswith("```"):
+        first_nl = t.find("\n")
+        if first_nl >= 0:
+            t = t[first_nl + 1:]
+        if t.rstrip().endswith("```"):
+            t = t.rstrip()[:-3].strip()
+        else:
+            t = t.strip()
+    if not (t.startswith("{") or t.startswith("[")):
+        return None
+    try:
+        return json.loads(t)
+    except (json.JSONDecodeError, ValueError):
+        return None
 
 
 def _render_msg(msg):
@@ -1577,7 +1612,11 @@ def _render_msg(msg):
     if not content_val:
         st.markdown("<em style='color:#6b7280'>（空）</em>", unsafe_allow_html=True)
     elif isinstance(content_val, str):
-        st.markdown(content_val)
+        _parsed = _try_parse_json_string(content_val)
+        if _parsed is not None:
+            st.json(_parsed)
+        else:
+            st.markdown(content_val)
     elif isinstance(content_val, list):
         for part in content_val:
             if not isinstance(part, dict):
@@ -1719,7 +1758,7 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
             cols = st.columns(min(5, len(shown)))
             for col, (k, v) in zip(cols, shown):
                 col.metric(k, _format_tokens(v))
-        cost = _estimate_cost(span, "tokens")
+        cost = _estimate_cost(span)
         if cost is not None:
             st.caption(f"💰 estimated cost (this span): **${cost:.4f}**")
 
@@ -1765,7 +1804,11 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
 
 def _render_input_fallback(attrs, key):
     """Smart fallback for input/output values."""
+    # Try flat-key read first (matches the JSONL exporter format), then
+    # fall back to canon() so the nested-dict variant works too.
     val = attrs.get(key)
+    if val is None:
+        val = canon(attrs, key)
     if val is None:
         st.caption(f"（未捕获 {key.split(chr(46))[0]} ）")
         return
@@ -1924,7 +1967,7 @@ def _render_span_meta(span: dict) -> None:
     )
     model = canon(attrs, "model") or "-"
     provider = canon(attrs, "model.provider") or ""
-    cost = _estimate_cost(span, "tokens")
+    cost = _estimate_cost(span)
 
     rows = [
         ("名称", name),
