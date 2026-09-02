@@ -55,6 +55,20 @@ all-instruments = [
     "agent-monitor[instrument,openai,langchain,llama-index,anthropic,google-genai,bedrock,dspy,litellm,groq,haystack,autogen,crewai,smolagents]",
 ]
 
+# Streamlit viewer + auto-refresh dep. Installed by
+# `python -m agent_monitor init` by default; declare here so fresh
+# checkouts can `pip install -e ".[viewer]"` and run the viewer
+# without a separate manual install.
+viewer = [
+    "streamlit>=1.30",
+    "streamlit-autorefresh>=1.0",
+]
+
+# pytest for the tests/ regression suite added in v1.1.1.
+test = [
+    "pytest>=7",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

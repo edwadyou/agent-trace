@@ -45,6 +45,16 @@ Python (e.g. `pip install -e D:\my-projects\agent-monitor`). `init`
 will tell you when it is not.
 """
 from __future__ import annotations
+import argparse
+import json
+import os
+import runpy
+import sys
+from pathlib import Path
+
+
+_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "examples" / "_templates"
+
 # ---------- helpers (used by init --framework auto) -----------------------
 def _pip_install(pkgs: list[str], *, label: str) -> int:
     """Run ``pip install <pkgs>`` and stream its output. Returns rc."""
@@ -104,17 +114,6 @@ def _agent_monitor_importable() -> bool:
         return True
     except ImportError:
         return False
-
-
-import argparse
-import json
-import os
-import runpy
-import sys
-from pathlib import Path
-
-
-_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "examples" / "_templates"
 
 
 # ---------- subcommands ------------------------------------------------------

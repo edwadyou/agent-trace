@@ -60,7 +60,7 @@ LANGCHAIN_RULES = [
     NamingRule(re.compile(r"^__end__$"),                         "结束", visible=False),
     NamingRule(re.compile(r"^Channel(Read|Write)\b"),            "Channel op", visible=False),
     NamingRule(re.compile(r"^_RoutedNode"),                       "Routing wrapper", visible=False),
-    NamingRule(re.compile(r"^Chat(OpenAI|Anthropic|GoogleGenerativeAI|Bedrock|Groq|Mistral|Fireworks|Ollama|Fireworks|VertexAI)\b.*"), computed=_lc_chatmodel_label, require_kind="LLM"),
+    NamingRule(re.compile(r"^Chat(OpenAI|Anthropic|GoogleGenerativeAI|Bedrock|Groq|Mistral|Fireworks|Ollama|VertexAI)\b.*"), computed=_lc_chatmodel_label, require_kind="LLM"),
     NamingRule(re.compile(r"^ChatOpenAI$|^ChatAnthropic$|^ChatGoogle.*$|^ChatBedrock.*$|^ChatGroq$|^ChatMistral.*$"), "大模型调用", require_kind="LLM"),
     NamingRule(re.compile(r"^BaseChatModel$|^BaseLanguageModel$"), "语言模型", require_kind="LLM"),
     NamingRule(re.compile(r"^LLM\b"),                            "大模型调用", require_kind="LLM"),

@@ -118,51 +118,6 @@ def _reconstruct_indexed_list(attrs, prefix):
     return out
 
 
-def _reconstruct_indexed_list(attrs, prefix):
-    """Reconstruct a list from flat dotted keys like '<prefix>.0.message.role'.
-    The OpenInference JSONL exporter flattens list items by integer index.
-    Returns None if no keys with the given prefix are found.
-    """
-    if not isinstance(attrs, dict):
-        return None
-    prefix_dot = prefix + '.'
-    items = {}
-    for k, v in attrs.items():
-        if not isinstance(k, str) or not k.startswith(prefix_dot):
-            continue
-        rest = k[len(prefix_dot):]
-        parts = rest.split('.', 1)
-        if not parts or not parts[0].isdigit():
-            continue
-        idx = int(parts[0])
-        sub_path = parts[1] if len(parts) > 1 else ''
-        items.setdefault(idx, {})[sub_path] = v
-    if not items:
-        return None
-    max_idx = max(items.keys())
-    out = []
-    for i in range(max_idx + 1):
-        flat_for_i = items.get(i, {})
-        nested = {}
-        for sub_key, sub_val in flat_for_i.items():
-            if not sub_key:
-                nested['_value'] = sub_val
-                continue
-            segs = sub_key.split('.')
-            cur = nested
-            for s in segs[:-1]:
-                if not isinstance(cur, dict):
-                    break
-                nxt = cur.get(s)
-                if nxt is None or not isinstance(nxt, dict):
-                    nxt = {}
-                    cur[s] = nxt
-                cur = nxt
-            cur[segs[-1]] = sub_val
-        out.append(nested)
-    return out
-
-
 # canon() - the workhorse
 # -----------------------------------------------------------------------------
 def canon(attrs: dict | None, key: str, default: Any = None) -> Any:
@@ -209,16 +164,9 @@ def canon(attrs: dict | None, key: str, default: Any = None) -> Any:
             if lst:
                 return lst
 
-    # 3) Flat-indexed reconstruction: OpenInference exporter writes
-    #    "llm.input_messages.0.message.role" instead of nested lists.
-    if key.startswith('messages.'):
-        side = key.split('.', 1)[1]
-        for prefix in (f'llm.{side}_messages', f'gen_ai.{side}.messages'):
-            lst = _reconstruct_indexed_list(attrs, prefix)
-            if lst:
-                return lst
+    
 
-    # 2) LangChain fallback: token counts inside the JSON output.value
+    # 3) LangChain fallback: token counts inside the JSON output.value
     if key.startswith("tokens."):
         v = _lc_extract_token(attrs, key)
         if v is not None:

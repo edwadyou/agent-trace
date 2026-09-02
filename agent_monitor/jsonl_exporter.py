@@ -39,6 +39,29 @@ from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 
 SCHEMA_VERSION = "1.1.0"
 
+# Process-level registry of files already truncated by JsonlFileExporter in
+# this Python process. Keyed by os.path.realpath so that symlinks and
+# relative paths collapse to the same entry. Prevents nested monitor()
+# contexts (or two `monitor()` calls in one process) from erasing each
+# other`s historical traces on the second-and-later construction.
+_TRUNCATED_FILES: set[str] = set()
+
+
+def _already_truncated(path: Path) -> bool:
+    try:
+        key = str(Path(os.path.realpath(path)).resolve())
+    except OSError:
+        key = str(Path(path).absolute())
+    return key in _TRUNCATED_FILES
+
+
+def _mark_truncated(path: Path) -> None:
+    try:
+        key = str(Path(os.path.realpath(path)).resolve())
+    except OSError:
+        key = str(Path(path).absolute())
+    _TRUNCATED_FILES.add(key)
+
 # LLM/OpenInference attribute keys we flatten from nested ``output.value``
 # into top-level ``attributes`` for easier consumer access.
 _FLATTEN_KEYS = (
@@ -68,7 +91,7 @@ class JsonlFileExporter(SpanExporter):
         self,
         file_path: str | os.PathLike[str] = "latest_traces.jsonl",
         *,
-        truncate_on_init: bool = True,
+        truncate_on_init: bool = False,
         ensure_ascii: bool = False,
         service_name: str | None = None,
     ) -> None:
@@ -76,8 +99,12 @@ class JsonlFileExporter(SpanExporter):
         self._ensure_ascii = ensure_ascii
         self._service_name = service_name
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
-        if truncate_on_init:
+        # Idempotent per process: only clear on the FIRST construction for a
+        # given path. Subsequent exports (nested monitor() / same-process
+        # re-use of the same file) append so prior spans survive.
+        if truncate_on_init and not _already_truncated(self.file_path):
             self.file_path.write_text("", encoding="utf-8")
+            _mark_truncated(self.file_path)
 
     def export(self, spans: list[ReadableSpan]) -> SpanExportResult:
         if not spans:

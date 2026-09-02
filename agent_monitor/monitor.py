@@ -30,7 +30,7 @@ def _load_dotenv() -> None:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        if key and not os.environ.get(key, "").strip():
+        if key and not os.environ.get(key):
             os.environ[key] = value
 
 
@@ -84,7 +84,11 @@ def monitor(
     # ---- 2) resolve exporter -------------------------------------------------
     if exporter is None:
         path = os.fspath(trace_file) if trace_file is not None else DEFAULT_TRACE_FILE
-        exporter = JsonlFileExporter(file_path=path)
+        # truncate_on_init defaults to False inside the exporter; we re-enable
+        # it HERE so the first monitor() in this process clears a stale file.
+        # The exporter's module-level _TRUNCATED_FILES registry ensures a
+        # nested / second monitor() to the same path does NOT re-truncate.
+        exporter = JsonlFileExporter(file_path=path, truncate_on_init=True)
     elif isinstance(exporter, str):
         exporter = _resolve_named_exporter(exporter, service_name=service_name,
                                            trace_file=trace_file)
@@ -94,8 +98,16 @@ def monitor(
     provider = TracerProvider(resource=resource)
     provider.add_span_processor(processor)
     _instrumented = []
+    # Push: remember whoever set the global tracer provider before us so
+    # the `finally` block can restore it. Without this, nested `monitor()`
+    # calls inside the same process would all share / overwrite each
+    # other, and the outermost shutdown would tear down a provider the
+    # caller still needs.
+    _prev_provider = otel_trace.get_tracer_provider()
+    _we_set_global = False
     try:
         otel_trace.set_tracer_provider(provider)
+        _we_set_global = True
         if auto_instrument:
             _instrumented = _auto_instrument(
                 tracer_provider=provider,
@@ -107,11 +119,27 @@ def monitor(
         for inst in _instrumented:
             try:
                 inst.uninstrument()
-            except Exception:
-                pass
-        processor.force_flush()
+            except Exception as exc:  # pragma: no cover
+                import sys as _sys_m
+                print(f"[monitor] uninstrument failed: {exc}", file=_sys_m.stderr)
+        # Flush then shut down our own processor/provider. Swallow
+        # transient I/O errors so a single failure does not skip the
+        # downstream cleanup steps.
+        try:
+            processor.force_flush()
+        except Exception as exc:  # pragma: no cover
+            import sys as _sys_m
+            print(f"[monitor] force_flush failed: {exc}", file=_sys_m.stderr)
         processor.shutdown()
         provider.shutdown()
+        # Pop: restore the previous tracer provider so nested or
+        # consecutive monitor() calls do not see a stale, shut-down
+        # global provider.
+        if _we_set_global:
+            try:
+                otel_trace.set_tracer_provider(_prev_provider)
+            except Exception:  # pragma: no cover
+                pass
 
 
 def trace(service_name="agent", *, auto_instrument=False, auto_detect=False,
@@ -190,7 +218,7 @@ def _resolve_named_exporter(name: str, *, service_name: str,
     name = name.lower().strip()
     if name in {"jsonl", "json", "file", "stream", "local"}:
         path = os.fspath(trace_file) if trace_file is not None else DEFAULT_TRACE_FILE
-        return JsonlFileExporter(file_path=path)
+        return JsonlFileExporter(file_path=path, truncate_on_init=True)
     if name in {"console", "tree"}:
         return ConsoleSpanExporter(service_name=service_name)
     raise ValueError(
