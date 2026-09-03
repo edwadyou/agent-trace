@@ -53,7 +53,12 @@ def _render_detail_column(sel_spans, all_by_id):
 
 
 
-    _render_detail_panel(sel_spans, by_id_all=all_by_id)
+    # Everything below (header card + 3 tabs + every detail-card) goes
+    # inside a column-internal scroll container so a long input/output
+    # payload does NOT push the page height past the viewport. CSS in
+    # config.py gives this key the matching .st-key-detail_scroll rule.
+    with st.container(key="detail_scroll", height="stretch"):
+        _render_detail_panel(sel_spans, by_id_all=all_by_id)
 
 
 def _jump_to_span(span_id):

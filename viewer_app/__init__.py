@@ -9,7 +9,7 @@ from collections import defaultdict
 import streamlit as st
 
 from . import state
-from .config import _dbg
+from .config import _CSS, _dbg
 from .data import _aggregate_kpi, _discover_trace_sources, _latest_start, load_traces
 from .format import _format_duration_ms, _kind_pill_html, _span_display_name
 from .render_detail import (
@@ -97,6 +97,7 @@ def _render_flowchart_mode(sel_spans, kpi, all_by_id):
 
 def run():
     """Execute the full viewer page (called by ``streamlit run viewer.py``)."""
+    st.markdown(_CSS, unsafe_allow_html=True)
     st.session_state.setdefault("trace_source", None)
     st.session_state.setdefault("selected_trace", None)
     st.session_state.setdefault("selected_span", None)

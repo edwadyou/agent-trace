@@ -306,11 +306,16 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
 .st-key-trace_list_scroll {
 
-    max-height: calc(100vh - 200px);
+    /* !important: Streamlit emits inline height: 100% on the container
+       when height="stretch" is set; without this our height/max-height
+       are silently overridden and overflow-y has nothing to scroll. */
+    height: calc(100vh - 200px) !important;
 
-    overflow-y: auto;
+    max-height: calc(100vh - 200px) !important;
 
-    overflow-x: hidden;
+    overflow-y: auto !important;
+
+    overflow-x: hidden !important;
 
     padding: 4px 4px 6px 0;
 
@@ -339,6 +344,59 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 }
 
 .st-key-trace_list_scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* ----- viewport-locked 3-column layout (so the side columns are the only
+   things that scroll, not the whole page) -----
+   Why: without these rules a tall detail panel pushes the body height
+   past the viewport and Streamlit shows a page-level scrollbar; the user
+   then ends up scrolling the entire app instead of the right column.
+   The three columns share whatever vertical room the page-header did not
+   take, so left/right can scroll independently and the middle
+   (Mermaid) column keeps the height the component reports. */
+
+[data-testid="stHorizontalBlock"] { align-items: stretch; }
+
+[data-testid="stColumn"] {
+    /* header (~h2 + caption) + page padding ~ 130px; subtract that from
+       the viewport so the row never exceeds the visible area. */
+    max-height: calc(100vh - 130px);
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* ----- right detail scroll container (mirror of trace list) ----- */
+.st-key-detail_scroll {
+
+    /* !important: Streamlit emits inline height: 100% on the container
+       when height="stretch" is set; without this our height/max-height
+       are silently overridden and overflow-y has nothing to scroll. */
+    height: calc(100vh - 200px) !important;
+
+    max-height: calc(100vh - 200px) !important;
+
+    overflow-y: auto !important;
+
+    overflow-x: hidden !important;
+
+    padding: 4px 4px 6px 0;
+
+    margin-top: 4px;
+
+    scrollbar-width: thin;
+
+    scrollbar-color: rgba(255,255,255,0.22) transparent;
+
+}
+.st-key-detail_scroll::-webkit-scrollbar { width: 6px; }
+.st-key-detail_scroll::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.20);
+    border-radius: 3px;
+}
+.st-key-detail_scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.35);
+}
+.st-key-detail_scroll::-webkit-scrollbar-track { background: transparent; }
+
 
 
 
@@ -846,11 +904,15 @@ footer { visibility: hidden; }
 
     .msg-card .msg-body::-webkit-scrollbar-track { background: transparent; }
 
+    /* ===== 页面锁死：整页固定不滚动，只有左右栏内部滚动 ===== */
+    [data-testid="stMain"] { overflow: hidden; }
+    .block-container { max-height: 100vh; overflow: hidden; }
+    [data-testid="stVerticalBlock"] { max-height: 100vh; overflow: hidden; }
+
 </style>
 
 """
 
-st.markdown(_CSS, unsafe_allow_html=True)
 _COST_PER_1K = {
 
     # OpenAI

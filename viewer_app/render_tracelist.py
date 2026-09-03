@@ -423,7 +423,7 @@ def _render_trace_cards_list():
 
     # compact card.
 
-    with st.container(key="trace_list_scroll"):
+    with st.container(key="trace_list_scroll", height="stretch"):
 
         for tid in sorted_tids:
 
