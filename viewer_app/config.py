@@ -306,12 +306,19 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
 .st-key-trace_list_scroll {
 
-    /* !important: Streamlit emits inline height: 100% on the container
-       when height="stretch" is set; without this our height/max-height
-       are silently overridden and overflow-y has nothing to scroll. */
-    height: calc(100vh - 200px) !important;
+    /* Sized by the "viewport-locked flex chain" at the bottom of this
+       stylesheet instead of calc(100vh - <magic>px): flex-basis 0 + grow
+       makes this box exactly as tall as the room its column has left, so
+       the scrollbar always reaches the real end of the content.
+       !important: Streamlit emits inline height/flex on this element when
+       height="stretch" is set, which would otherwise win. */
+    flex: 1 1 0% !important;
 
-    max-height: calc(100vh - 200px) !important;
+    height: auto !important;
+
+    min-height: 0 !important;
+
+    max-height: 100% !important;
 
     overflow-y: auto !important;
 
@@ -352,27 +359,39 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
    then ends up scrolling the entire app instead of the right column.
    The three columns share whatever vertical room the page-header did not
    take, so left/right can scroll independently and the middle
-   (Mermaid) column keeps the height the component reports. */
+   (Mermaid) column keeps the height the component reports.
+
+   The height plumbing itself lives in the "viewport-locked flex chain"
+   block at the bottom of this stylesheet: it measures the room that is
+   really left over instead of estimating it in pixels. The old blanket
+   max-height: calc(100vh - 130px) assumed a fixed page-header height and
+   silently clipped whatever did not fit. */
 
 [data-testid="stHorizontalBlock"] { align-items: stretch; }
-
-[data-testid="stColumn"] {
-    /* header (~h2 + caption) + page padding ~ 130px; subtract that from
-       the viewport so the row never exceeds the visible area. */
-    max-height: calc(100vh - 130px);
-    overflow: hidden;
-    min-height: 0;
-}
 
 /* ----- right detail scroll container (mirror of trace list) ----- */
 .st-key-detail_scroll {
 
-    /* !important: Streamlit emits inline height: 100% on the container
-       when height="stretch" is set; without this our height/max-height
-       are silently overridden and overflow-y has nothing to scroll. */
-    height: calc(100vh - 200px) !important;
+    /* Sized by the "viewport-locked flex chain" at the bottom of this
+       stylesheet instead of calc(100vh - <magic>px).
 
-    max-height: calc(100vh - 200px) !important;
+       This is the box the user scrolls, and it sits BELOW a
+       variable-height stack: the panel title, plus the back-to-overview
+       button that only renders once a non-root span is selected. A fixed
+       calc() cannot know how tall that stack is, so when the button
+       appeared the panel overflowed its clipped ancestors and its tail
+       became unreachable - the scrollbar hit the end while content was
+       still hidden. flex-basis 0 + grow measures the leftover room.
+
+       !important: Streamlit emits inline height/flex on this element when
+       height="stretch" is set, which would otherwise win. */
+    flex: 1 1 0% !important;
+
+    height: auto !important;
+
+    min-height: 0 !important;
+
+    max-height: 100% !important;
 
     overflow-y: auto !important;
 
@@ -846,24 +865,6 @@ footer { visibility: hidden; }
 
 }
 
-    overflow-y: auto;
-
-    overflow-wrap: anywhere;
-
-    word-break: break-word;
-
-    padding: 6px 10px 8px 10px;
-
-    margin: 0;
-
-    font-size: 12.5px;
-
-    line-height: 1.45;
-
-    color: #d1d5db;
-
-}
-
 .msg-card .msg-body > p:first-child { margin-top: 0; }
 
 .msg-card .msg-body > p:last-child  { margin-bottom: 0; }
@@ -905,9 +906,143 @@ footer { visibility: hidden; }
     .msg-card .msg-body::-webkit-scrollbar-track { background: transparent; }
 
     /* ===== 页面锁死：整页固定不滚动，只有左右栏内部滚动 ===== */
-    [data-testid="stMain"] { overflow: hidden; }
-    .block-container { max-height: 100vh; overflow: hidden; }
-    [data-testid="stVerticalBlock"] { max-height: 100vh; overflow: hidden; }
+    /* ===== viewport-locked flex chain =====
+       The page itself never scrolls; only the two side panels do. Every
+       level between the page shell and those panels is a flex column that
+       hands its REAL height down, and the panels are flex: 1 1 0% so they
+       end up exactly as tall as the space left over.
+
+       Why this replaced the old pixel guesses: the previous rules locked
+       the panels to calc(100vh - 200px) and every column to
+       max-height: calc(100vh - 130px), i.e. they hard-coded the height of
+       everything stacked above them (page header, panel title, container
+       padding). Those guesses broke as soon as the real stack was taller -
+       most reliably when the conditional back-to-overview button appears,
+       which is exactly when a non-root span is selected and the user is
+       reading a long payload. The panel then overflowed ancestors that all
+       had overflow: hidden, and since the page cannot scroll either, the
+       tail was permanently unreachable: the scrollbar ran out while content
+       was still hidden. Measuring with flexbox removes the guess.
+
+       :has() is used on purpose so these rules do not depend on how many
+       wrapper elements Streamlit inserts between levels, which varies by
+       version (stElementContainer / stLayoutWrapper / stVerticalBlock). */
+
+    [data-testid="stMain"] {
+        /* flex-shrink + min-height:0 keep this correct even if a future
+           Streamlit version puts an in-flow header above stMain: the box
+           then shrinks to the real leftover space instead of overflowing
+           the viewport by the header height. */
+        flex: 1 1 auto !important;
+        min-height: 0 !important;
+        height: 100vh !important;
+        max-height: 100vh !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    /* Streamlit may wrap .block-container in an extra level; whatever that
+       level is, it has to pass the full height down. */
+    [data-testid="stMain"] > :has(.block-container) {
+        flex: 1 1 0% !important;
+        min-height: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    .block-container {
+        flex: 1 1 0% !important;
+        min-height: 0 !important;
+        height: auto !important;
+        max-height: 100% !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    /* every box on the path down to a side panel stretches and stays a flex
+       column. The row and column boxes are excluded (styled below) and so
+       are the two panel containers (the scrolling leaves, styled above). */
+    .block-container *:has(.st-key-detail_scroll):not([data-testid="stHorizontalBlock"]):not([data-testid="stColumn"]):not(.st-key-detail_scroll):not(.st-key-trace_list_scroll),
+    .block-container *:has(.st-key-trace_list_scroll):not([data-testid="stHorizontalBlock"]):not([data-testid="stColumn"]):not(.st-key-detail_scroll):not(.st-key-trace_list_scroll) {
+        flex: 1 1 0% !important;
+        min-height: 0 !important;
+        max-height: 100% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: visible !important;
+    }
+
+    /* the 3-column body row is the one that owns the detail panel; it takes
+       all the room the page-header row left */
+    [data-testid="stHorizontalBlock"]:has(.st-key-detail_scroll) {
+        flex: 1 1 0% !important;
+        min-height: 0 !important;
+        max-height: 100% !important;
+        align-items: stretch !important;
+    }
+
+    /* every other row (the page-header row, and rows nested inside the
+       panels) keeps its natural content height */
+    [data-testid="stHorizontalBlock"]:not(:has(.st-key-detail_scroll)) {
+        flex: 0 0 auto !important;
+    }
+
+    /* the columns of the body row fill their row exactly. Scoped with :has()
+       on the owning row instead of a blanket [data-testid="stColumn"]: the
+       blanket version leaked onto the small nested columns inside the panels
+       (st.columns(2) for input/output, st.columns(4) for the metadata grid)
+       and clipped them. Replaces the old max-height: calc(100vh - 130px). */
+    [data-testid="stHorizontalBlock"]:has(.st-key-detail_scroll) > [data-testid="stColumn"] {
+        height: 100% !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+    }
+
+    /* the two side columns are the flex parents of their own title/button
+       stack plus their scrolling panel */
+    [data-testid="stColumn"]:has(.st-key-detail_scroll),
+    [data-testid="stColumn"]:has(.st-key-trace_list_scroll) {
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    /* the center (Mermaid) column scrolls instead of clipping when the
+       diagram is taller than the row */
+    [data-testid="stHorizontalBlock"]:has(.st-key-detail_scroll) > [data-testid="stColumn"]:not(:has(.st-key-detail_scroll)):not(:has(.st-key-trace_list_scroll)) {
+        overflow-y: auto !important;
+    }
+
+    /* Streamlit puts an inline height:100% on the block inside a
+       stretch-height container. Inside a scroll box that block must be
+       content-sized and must not clip, otherwise its overflow is invisible
+       AND unreachable - the same scrollbar-stops-early symptom. This also
+       replaces the old blanket rule that set max-height: 100vh plus
+       overflow: hidden on EVERY stVerticalBlock, which clipped nested
+       blocks all the way down inside the panels. */
+    .st-key-detail_scroll [data-testid="stVerticalBlock"],
+    .st-key-trace_list_scroll [data-testid="stVerticalBlock"] {
+        height: auto !important;
+        max-height: none !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+    }
+
+    /* If this Streamlit version tags two nested levels with the same key
+       class, only the outer one may scroll: the inner one stays a plain
+       content-sized block so everything overflows into the outer scroll box
+       instead of a second scrollbar fighting for the same space. */
+    .st-key-detail_scroll .st-key-detail_scroll,
+    .st-key-trace_list_scroll .st-key-trace_list_scroll {
+        flex: 0 0 auto !important;
+        height: auto !important;
+        max-height: none !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
 
 </style>
 
