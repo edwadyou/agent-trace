@@ -9,7 +9,7 @@ from collections import defaultdict
 import streamlit as st
 
 from . import state
-from .config import _dbg
+from .config import _CSS, _dbg
 from .data import _aggregate_kpi, _discover_trace_sources, _latest_start, load_traces
 from .format import _format_duration_ms, _kind_pill_html, _span_display_name
 from .render_detail import (
@@ -21,7 +21,7 @@ from .render_flowchart import (
     _mermaid_safe_id, _mermaid_label, _build_mermaid,
     _render_flowchart_component, _render_flowchart_center,
 )
-from .render_tracelist import _fmt_trace_option, _render_trace_cards_list
+from .render_tracelist import _render_trace_cards_list
 
 from viewer.normalize import span_kind
 
@@ -97,6 +97,7 @@ def _render_flowchart_mode(sel_spans, kpi, all_by_id):
 
 def run():
     """Execute the full viewer page (called by ``streamlit run viewer.py``)."""
+    st.markdown(_CSS, unsafe_allow_html=True)
     st.session_state.setdefault("trace_source", None)
     st.session_state.setdefault("selected_trace", None)
     st.session_state.setdefault("selected_span", None)
@@ -207,11 +208,11 @@ def run():
     else:
 
         _dbg(f"KEEP: selected_trace = {st.session_state.selected_trace!r} (valid)")
-    hdr_l, hdr_m, hdr_r = st.columns([2, 3, 2])
+    hdr_l, hdr_m = st.columns([3, 2])
 
     with hdr_l:
 
-        st.markdown("## 🔎 Agent 链路监控  `v3-3col`", unsafe_allow_html=True)
+        st.markdown("## 🔎 Agent 链路监控", unsafe_allow_html=True)
 
         st.caption(
 
@@ -266,63 +267,6 @@ def run():
         else:
 
             pass  # single-source mode: do not render the raw path caption
-    with hdr_r:
-
-        if trace_ids:
-
-            try:
-
-                idx = trace_ids.index(st.session_state.selected_trace)
-
-            except ValueError:
-
-                idx = 0
-
-
-
-    # Generic suffixes that mean "this is just infra, not the purpose".
-
-            # Used to strip the trailing noise from names like
-
-            # "verify_claim_executor" -> "Verify Claim".
-            new_tid = st.selectbox(
-
-                "Trace",
-
-                options=trace_ids,
-
-                index=idx,
-
-                format_func=_fmt_trace_option,
-
-                label_visibility="collapsed",
-
-            )
-
-            if new_tid != st.session_state.selected_trace:
-
-                st.session_state.selected_trace = new_tid
-
-                st.session_state.selected_span = None
-
-                # drop stale URL-carried navigation params when switching traces
-
-                for _k in ('focus', 'trace'):
-
-                    if _k in st.query_params:
-
-                        del st.query_params[_k]
-
-                st.rerun()
-
-
-
-
-
-
-
-
-
     # ---------------------------------------------------------------------------
 
     # Build filtered span list + tree structure
