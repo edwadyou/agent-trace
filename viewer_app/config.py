@@ -433,9 +433,9 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
 [data-testid="stElementContainer"][class*="st-key-trace_card_"] {
 
-    background: rgba(255,255,255,0.03);
+    background: rgba(255,255,255,0.09);
 
-    border: 1px solid rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.20);
 
     border-radius: 6px;
 
@@ -449,9 +449,9 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
 [data-testid="stElementContainer"][class*="st-key-trace_card_"]:hover {
 
-    background: rgba(255,255,255,0.05);
+    background: rgba(255,255,255,0.13);
 
-    border-color: rgba(255,255,255,0.18);
+    border-color: rgba(255,255,255,0.32);
 
 }
 
@@ -491,21 +491,21 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
     background: transparent !important;
 
-    /* Light gray so the inactive trace-card label stays readable on the
+    /* Follow the active Streamlit text color. A hard-coded light gray was
 
-       semi-transparent card sitting on a dark page background. */
+       nearly invisible when the app ran with a light page background. */
 
-    color: #e5e7eb !important;
+    color: var(--text-color, #1f2937) !important;
 
-    font-weight: 700 !important;
+    font-weight: 600 !important;
 
 }
 
 [data-testid="stElementContainer"][class*="st-key-trace_card_"] button[data-testid="stBaseButton-secondary"]:hover {
 
-    background: rgba(255,255,255,0.04) !important;
+    background: rgba(255,255,255,0.08) !important;
 
-    color: #f3f4f6 !important;
+    color: var(--text-color, #111827) !important;
 
 }
 
@@ -527,9 +527,9 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
     background: rgba(59,130,246,0.22) !important;
 
-    color: #dbeafe !important;
+    color: var(--primary-color, #1d4ed8) !important;
 
-    font-weight: 600 !important;
+    font-weight: 700 !important;
 
 }
 
@@ -746,6 +746,18 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 .stTabs [data-baseweb="tab-list"] { gap: 4px; }
 
 .stTabs [data-baseweb="tab"] { padding: 6px 10px; font-size: 12.5px; }
+
+/* Keep the span-detail tab switcher visible while its long payload scrolls.
+   The title itself is rendered outside detail_scroll, so only this nav row
+   needs to stick. top:-4px cancels the scroll container's top padding so
+   content cannot peek through the gap above the solid header background. */
+.st-key-detail_scroll [data-testid="stTabs"] div:has(> [data-testid="stTab"]) {
+    position: sticky !important;
+    top: -4px !important;
+    z-index: 20 !important;
+    background: var(--background, #fff) !important;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+}
 
 .stExpander details summary { font-size: 12.5px; }
 
