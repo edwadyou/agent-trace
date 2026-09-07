@@ -17,19 +17,20 @@ Designed so a new agent user can type four commands and be done:
 
     cd my-new-agent
     python -m agent_monitor init --framework auto
-                                   # auto-installs FRAMEWORK SDK + openinference
-                                   # instrumentor + streamlit + streamlit-autorefresh,
-                                   # then writes instrument.py
+                                   # detects every installed framework, installs
+                                   # combined OpenInference extras, then writes
+                                   # instrument.py
     python instrument.py            # writes latest_traces.jsonl
     streamlit run D:/my-projects/agent-monitor/viewer.py
                                    # browser live view
 
-What `init --framework auto` installs in one shot:
+What `init --framework auto` installs:
 
-  1. framework SDK (e.g. langchain / openai / crewai / autogen / ...)
-       - picked by sniffing the current env, falling back to langchain
-  2. matching OpenInference instrumentor via `agent-monitor[<framework>]`
-  3. streamlit + streamlit-autorefresh (for the viewer)
+  1. one combined agent-monitor extra spec for every detected framework,
+     e.g. ``agent-monitor[langchain,openai]``
+  2. streamlit + streamlit-autorefresh (for the viewer)
+  3. if no framework SDK is installed, LangChain demo dependencies as a
+     conservative fallback
 
 Use `--no-install-deps` to skip BOTH the framework SDK and the OI
 instrumentor (e.g. CI / air-gapped). Use `--no-install-streamlit` to keep
@@ -41,8 +42,8 @@ working directory. Pass --no-launch to print the resolved command without
 executing streamlit.
 
 NOTE: `agent_monitor` itself must already be importable in the current
-Python (e.g. `pip install -e D:\my-projects\agent-monitor`). `init`
-will tell you when it is not.
+Python (e.g. `pip install -e "D:\my-projects\agent-monitor[langchain,openai]"`).
+`init` will tell you when it is not.
 """
 from __future__ import annotations
 import argparse
@@ -53,50 +54,100 @@ import sys
 from pathlib import Path
 
 
-_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "examples" / "_templates"
+_TEMPLATE_PATH = Path(__file__).resolve().with_name("templates") / "instrument.py"
+_FRAMEWORK_PLACEHOLDER = "__AGENT_MONITOR_FRAMEWORKS__"
+_FRAMEWORK_ALIASES = {
+    "langchain-openai": ("langchain", "openai"),
+    "langchain_openai": ("langchain", "openai"),
+    "pure": (),
+    "pure-no-framework": (),
+    "no-framework": (),
+}
 
 # ---------- helpers (used by init --framework auto) -----------------------
-def _pip_install(pkgs: list[str], *, label: str) -> int:
+def _pip_install(pkgs: list[str], *, label: str, editable: bool = False) -> int:
     """Run ``pip install <pkgs>`` and stream its output. Returns rc."""
     import subprocess
     if not pkgs:
         return 0
-    print(f"[init] {label}: pip install {' '.join(pkgs)}")
+    options = ["--editable"] if editable else []
+    requirement = " ".join(pkgs)
+    prefix = "-e " if editable else ""
+    print(f"[init] {label}: pip install {prefix}{requirement}")
     try:
         return subprocess.run(
-            [sys.executable, "-m", "pip", "install", *pkgs],
+            [sys.executable, "-m", "pip", "install", *options, *pkgs],
             check=False,
         ).returncode
     except FileNotFoundError:
         print("[init] could not invoke pip. Run manually:")
-        print(f"        {sys.executable} -m pip install {' '.join(pkgs)}")
+        print(f"        {sys.executable} -m pip install {prefix}{requirement}")
         return 1
 
 
-def _pip_install_framework(framework: str) -> int:
-    """Install the framework SDK AND the matching OpenInference instrumentor.
+def _local_project_root() -> Path | None:
+    """Return this package's source project when running from a checkout."""
+    root = Path(__file__).resolve().parent.parent
+    if (root / "pyproject.toml").is_file() and (root / "agent_monitor" / "__init__.py").is_file():
+        return root
+    return None
 
-    Concrete frameworks (e.g. langchain, openai, crewai) get one combined
-    pip call:
 
-        pip install <SDK pkgs> agent-monitor[<framework>]
+def _agent_monitor_spec(frameworks: list[str]) -> str:
+    extras = ",".join(frameworks)
+    root = _local_project_root()
+    if root is not None:
+        return f"{root}[{extras}]"
+    return f"agent-monitor[{extras}]"
 
-    Composite / unknown template names (e.g. ``langchain_openai``) print a
-    hint and return 0 - the user picks which component to install.
-    """
-    if framework == "auto":
-        return 0  # resolved upstream by cmd_init; never called with auto
-    from ._detect import framework_sdk_packages, list_supported_frameworks
-    if framework not in list_supported_frameworks():
-        print(f"[init] {framework!r} is a composite template (no single pip extra).")
-        print("        ensure its component frameworks are installed, e.g.:")
-        print("        pip install agent-monitor[" + framework.replace("_", "-").split("-")[0] + "]")
+
+def _pip_install_extras(frameworks: list[str]) -> int:
+    """Install all requested OpenInference extras in one pip invocation."""
+    if not frameworks:
         return 0
-    extras = framework.replace("_", "-")
-    oi_spec = f"agent-monitor[{extras}]"
-    pkgs = list(framework_sdk_packages(framework))
-    pkgs.append(oi_spec)
-    return _pip_install(pkgs, label=f"installing {framework} deps (SDK + OpenInference instrumentor)")
+    return _pip_install(
+        [_agent_monitor_spec(frameworks)],
+        label=f"installing OpenInference extras for {frameworks}",
+        editable=_local_project_root() is not None,
+    )
+
+
+def _pip_install_framework_sdks(frameworks: list[str]) -> int:
+    """Install framework SDKs for an environment with no detected frameworks."""
+    from ._detect import framework_sdk_packages
+
+    pkgs: list[str] = []
+    for framework in frameworks:
+        for package in framework_sdk_packages(framework):
+            if package not in pkgs:
+                pkgs.append(package)
+    return _pip_install(pkgs, label=f"installing framework SDKs for {frameworks}")
+
+
+def _parse_frameworks(value: str) -> list[str]:
+    """Parse a CLI framework value into stable, de-duplicated framework keys."""
+    from ._detect import list_supported_frameworks
+
+    tokens = [token.strip().lower() for token in value.split(",") if token.strip()]
+    if not tokens:
+        raise ValueError("no frameworks specified")
+    if "auto" in tokens:
+        if len(tokens) != 1:
+            raise ValueError("'auto' cannot be combined with explicit frameworks")
+        return ["auto"]
+
+    frameworks: list[str] = []
+    supported = list_supported_frameworks()
+    for token in tokens:
+        normalized = token.replace("_", "-")
+        expanded = _FRAMEWORK_ALIASES.get(normalized, (normalized,))
+        for framework in expanded:
+            if framework not in supported:
+                raise ValueError(f"unknown framework {framework!r}")
+            if framework not in frameworks:
+                frameworks.append(framework)
+
+    return [framework for framework in supported if framework in frameworks]
 
 
 def _pip_install_streamlit() -> int:
@@ -105,6 +156,18 @@ def _pip_install_streamlit() -> int:
         ["streamlit", "streamlit-autorefresh"],
         label="installing viewer deps",
     )
+
+
+def _render_instrument_template(frameworks: list[str]) -> str:
+    """Render the packaged template with an explicit instrumentor list."""
+    template = _TEMPLATE_PATH.read_text(encoding="utf-8")
+    count = template.count(_FRAMEWORK_PLACEHOLDER)
+    if count != 1:
+        raise RuntimeError(
+            f"instrument template must contain {_FRAMEWORK_PLACEHOLDER!r} exactly once; "
+            f"found {count}"
+        )
+    return template.replace(_FRAMEWORK_PLACEHOLDER, json.dumps(list(frameworks)))
 
 
 def _agent_monitor_importable() -> bool:
@@ -120,16 +183,15 @@ def _agent_monitor_importable() -> bool:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    """One-stop init: pick a framework, install EVERYTHING needed, write
+    """One-stop init: detect frameworks, install deps, write
     ``instrument.py`` into CWD.
 
     Default behaviour (no flags):
 
-        1. autodetect framework (or use --framework <name>)
-        2. pip install framework SDK packages
-                       + agent-monitor[<framework>] (OpenInference instrumentor)
+        1. use every installed framework (or --framework <name,...>)
+        2. pip install agent-monitor[<framework,...>] OpenInference extras
                        + streamlit + streamlit-autorefresh
-        3. write instrument.py from the matching template
+        3. write a generic instrument.py with an explicit INSTRUMENTORS list
 
     Flags:
         --no-install-deps       skip the framework SDK + OI instrumentor
@@ -143,48 +205,64 @@ def cmd_init(args: argparse.Namespace) -> int:
         print("        (or:  pip install agent-monitor)")
         return 1
 
-    framework = args.framework
-    if framework == "auto":
-        # Try 3 levels, in order:
-        #   (1) fully ready     -> compatible = SDK + OI instrumentor
-        #   (2) SDK present     -> installed  = SDK only, OI missing
-        #   (3) fresh env       -> neither; default to langchain
-        from ._detect import detect_compatible, detect_installed_frameworks
-        compat    = detect_compatible()
-        installed = detect_installed_frameworks()
-        if compat:
-            framework = compat[0]
-            print(f"[init] auto: OI-ready frameworks = {compat} -> using {framework!r}")
-        elif installed:
-            framework = installed[0]
+    try:
+        requested = _parse_frameworks(args.framework)
+    except ValueError as exc:
+        print(f"[init] {exc}")
+        return 2
+
+    fresh_environment = False
+    if requested == ["auto"]:
+        from ._detect import detect_installed_frameworks, list_supported_frameworks
+        detected = detect_installed_frameworks()
+        supported = list_supported_frameworks()
+        requested = [framework for framework in supported if framework in detected]
+        if requested:
             print(
-                f"[init] auto: SDK detected for {installed} but OI instrumentor missing;"
-                f" will install extras for {framework!r}"
+                f"[init] auto: detected framework SDKs = {requested}; "
+                "will install combined OpenInference extras"
             )
         else:
-            framework = "langchain"
+            requested = ["langchain"]
+            fresh_environment = True
             print(
-                f"[init] auto: no framework SDK detected in this env."
-                f" Falling back to {framework!r} (most common)."
+                "[init] auto: no framework SDK detected in this env. "
+                f"Falling back to {requested[0]!r} demo dependencies."
             )
 
-    # Install framework SDK + OpenInference instrumentor (unless opted out)
     if not args.no_install_deps:
-        rc = _pip_install_framework(framework)
-        if rc != 0:
-            return rc
-        # Install viewer deps (streamlit + streamlit-autorefresh)
+        if fresh_environment:
+            rc = _pip_install_framework_sdks(requested)
+            if rc != 0:
+                return rc
+
+        if requested:
+            rc = _pip_install_extras(requested)
+            if rc != 0:
+                return rc
+
         if not args.no_install_streamlit:
             rc = _pip_install_streamlit()
             if rc != 0:
                 return rc
 
-    template = _resolve_template(framework)
-    if template is None:
-        print(f"[init] no template for framework {framework!r}")
-        return 2
+        from ._detect import detect_compatible
+        compatible = detect_compatible(candidates=requested)
+        if compatible != requested:
+            missing = [framework for framework in requested if framework not in compatible]
+            print(
+                f"[init] these frameworks are still not ready: {missing}. "
+                "Check the pip output above; no instrument.py was written."
+            )
+            return 1
+
     out = Path(args.out)
-    out.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+    try:
+        content = _render_instrument_template(requested)
+        out.write_text(content, encoding="utf-8", newline="\n")
+    except (OSError, RuntimeError) as exc:
+        print(f"[init] could not write template: {exc}", file=sys.stderr)
+        return 1
     print(f"[init] wrote {out.resolve()}  ({out.stat().st_size} bytes)")
     print(f"[init] next: python {out.name}     # writes latest_traces.jsonl")
     if not args.no_install_streamlit:
@@ -287,16 +365,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_init = sub.add_parser(
         "init",
-        help="autodetect framework, install FRAMEWORK SDK + OpenInference "
-             "instrumentor + streamlit, and write instrument.py in cwd "
+        help="detect every installed framework, install combined OpenInference "
+             "extras and viewer deps, then write a generic instrument.py "
              "(use --no-install-deps / --no-install-streamlit to skip parts).",
     )
     p_init.add_argument(
         "--framework", default="auto",
-        help="framework key (langchain, openai, langchain_openai, "
-             "llama-index, crewai, dspy, autogen, haystack, smolagents, "
-             "anthropic, google-genai, groq, bedrock, litellm, pure, "
-             "or 'auto' to detect; default 'auto').",
+        help="comma-separated framework keys (for example langchain,openai), "
+             "'pure' for an empty instrumentor list, or 'auto' to detect all "
+             "installed frameworks (default 'auto').",
     )
     p_init.add_argument(
         "--out", default="instrument.py",
@@ -365,24 +442,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p_view.set_defaults(func=cmd_view)
 
     return p
-
-
-def _resolve_template(framework: str) -> Path | None:
-    """Find the right instrument_<X>.py template.
-
-    Special-cased names map to a non-default template:
-        - 'langchain_openai' -> instrument_langchain_openai.py
-    """
-    candidates = []
-    if framework in {"langchain_openai", "langchain-openai"}:
-        candidates.append("instrument_langchain_openai.py")
-    candidates.append(f"instrument_{framework.replace('-', '_')}.py")
-    candidates.append(f"instrument_{framework.replace('_', '-')}.py")
-    for name in candidates:
-        path = _TEMPLATES_DIR / name
-        if path.is_file():
-            return path
-    return None
 
 
 def main(argv: list[str] | None = None) -> int:

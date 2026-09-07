@@ -29,12 +29,11 @@ streams one JSON object per span to a local file.
 - **Default exporter = JSONL**: `monitor()` without arguments now writes
   `latest_traces.jsonl`. Pass `exporter="console"` if you want the old
   nested JSON tree under `traces/` instead.
-- **Templates**: `examples/_templates/instrument_<framework>.py` covers 14
-  frameworks (LangChain, OpenAI, LlamaIndex, CrewAI, DSPy, autogen,
-  Haystack, smolagents, Anthropic, Groq, Gemini, Bedrock, etc.) plus a
-  hand-rolled template. Each is ~10 lines.
-- **CLI scaffolder**: `python -m agent_monitor init` writes a starter
-  `instrument.py` for you.
+- **Templates**: one packaged `instrument.py` template works for any framework
+  combination and renders an explicit `INSTRUMENTORS` list.
+- **CLI scaffolder**: `python -m agent_monitor init` auto-detects every
+  installed framework, installs their combined OpenInference extras, and writes
+  a starter `instrument.py`.
 - **Export verifier**: `python -m agent_monitor verify` checks that the
   JSONL file is well-formed and contains useful data.
 
@@ -50,7 +49,7 @@ streams one JSON object per span to a local file.
 | `agent_monitor/_verify_export.py` | Validate a JSONL export |
 | `agent_monitor/__main__.py` | CLI: `init`, `run`, `detect`, `verify` |
 | `agent_monitor/trace_renderer.py` | Terminal tree renderer (ANSI) |
-| `examples/_templates/instrument_*.py` | Per-framework drop-in templates |
+| `agent_monitor/templates/instrument.py` | Packaged multi-framework scaffold template |
 | `viewer.py` | Streamlit viewer (3 s auto-refresh) |
 
 ## Monitor Your Own Agent
@@ -58,6 +57,10 @@ streams one JSON object per span to a local file.
 ### 1. Install
 
 ```bash
+# From this source checkout, use editable mode and combine extras:
+pip install -e "D:\my-projects\agent-monitor[langchain,openai]"
+
+# From an installed/wheel-based environment:
 # SDK core (just OTel + the monitor context manager)
 pip install agent-monitor
 
@@ -81,18 +84,19 @@ pip install "agent-monitor[all-instruments]"
 
 ### 2. Scaffold `instrument.py`
 
-Pick one:
+Generate the starter and edit the body to call your agent:
 
 ```bash
-# a) copy a template that matches your framework
-cp examples/_templates/instrument_langchain_openai.py instrument.py
-
-# b) let the CLI sniff and scaffold for you
 python -m agent_monitor init --framework auto
+
+# or request the exact framework set
+python -m agent_monitor init --framework langchain,openai
 ```
 
-Edit the 3 knobs (`SERVICE_NAME`, `INSTRUMENTORS`, the body of the `with
-monitor(...)` block).
+Edit `SERVICE_NAME` and replace the placeholder in the `with monitor(...)`
+block with your real agent entry-point call. Keep an existing customized
+`instrument.py`; do not overwrite it with the scaffold. Update its dependency
+installation with the matching combined extras instead.
 
 ### 3. Run + view
 

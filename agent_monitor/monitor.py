@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import os
+import sys
 from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
@@ -188,14 +189,23 @@ def _safe_serialize(obj):
 
 def _auto_instrument(*, tracer_provider, instrumentors=None, verbose=False):
     from importlib.metadata import entry_points
+    from ._detect import _normalize_instrumentor_name
+
     installed = []
     eps = entry_points()
     try:
         group = eps.select(group="openinference_instrumentor")
     except AttributeError:
         group = eps.get("openinference_instrumentor", [])
+
+    available = {_normalize_instrumentor_name(ep.name) for ep in group}
+    if instrumentors is None:
+        requested = None
+    else:
+        requested = {_normalize_instrumentor_name(name) for name in instrumentors}
+
     for ep in group:
-        if instrumentors is not None and ep.name not in instrumentors:
+        if requested is not None and _normalize_instrumentor_name(ep.name) not in requested:
             continue
         try:
             inst_cls = ep.load()
@@ -207,6 +217,15 @@ def _auto_instrument(*, tracer_provider, instrumentors=None, verbose=False):
         except Exception as e:
             if verbose:
                 print(f"  [monitor] Skipped {ep.name}: {e}")
+
+    if requested:
+        missing = requested - available
+        if missing:
+            print(
+                "[monitor] warning: requested instrumentors not installed: "
+                + ", ".join(sorted(missing)),
+                file=sys.stderr,
+            )
     if verbose and not installed:
         print("  [monitor] No OpenInference instrumentors found")
     return installed
