@@ -20,34 +20,6 @@ from viewer.canonical import SPAN_KINDS, COLORS
 from viewer.normalize import canon, friendly_name, span_kind, to_messages
 from viewer.visibility import is_span_visible, filter_visible_attrs
 
-# Bidirectional mermaid-flowchart component (click a span node -> the detail
-
-# column updates WITHOUT a full-page reload).  The frontend lives in
-
-# flowchart_component/ and talks back through the v1 component postMessage
-
-# protocol; the click handler sets Streamlit.setComponentValue which triggers
-
-# a normal (no-navigation) rerun.
-
-_COMPONENT_DIR = Path(__file__).resolve().parent.parent / "flowchart_component"
-
-if (_COMPONENT_DIR / "index.html").is_file():
-
-    _flowchart_component = components.declare_component(
-
-        "agent_flowchart", path=str(_COMPONENT_DIR)
-
-    )
-
-else:
-
-    _flowchart_component = None
-
-
-
-
-
 # ---------------------------------------------------------------------------
 
 # Bidirectional mermaid-flowchart component (click a span node -> the detail

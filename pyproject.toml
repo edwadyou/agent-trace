@@ -1,6 +1,6 @@
 [project]
 name = "agent-monitor"
-version = "0.1.0"
+version = "1.1.1"
 description = "Standalone local Agent monitoring -- trace execution without remote dependencies"
 requires-python = ">=3.10"
 dependencies = [
@@ -75,3 +75,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agent_monitor"]
+
+# Only the tests/ package holds real tests. The repo root also carries
+# environment-specific dev scratch scripts (test_app.py / test_detail.py /
+# smoke_test.py) that would otherwise be collected and fail.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

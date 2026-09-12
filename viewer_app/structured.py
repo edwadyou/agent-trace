@@ -182,7 +182,7 @@ def _render_structured(obj, *, depth=0):
 
                     _render_structured(item, depth=depth + 1)
 
-            elif isinstance(item, (dict, list)):
+            elif isinstance(item, list):
 
                 _render_structured(item, depth=depth + 1)
 

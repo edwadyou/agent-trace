@@ -20,6 +20,7 @@ from .config import _DEFAULT_TRACE_PATHS, _migrate_record, _SDK_SCHEMA, _dbg
 from .format import _estimate_cost, _format_duration_ms
 
 
+@dataclass
 class TraceKPI:
 
     n_spans: int = 0

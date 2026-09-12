@@ -449,4 +449,4 @@ def _render_trace_cards_list():
 
             )
 
-__all__ = [_render_trace_cards_list, _fmt_trace_option, _trace_label, _short_purpose, _PURPOSE_SUFFIX_DROP]
+__all__ = ['_render_trace_cards_list', '_fmt_trace_option', '_trace_label', '_short_purpose', '_PURPOSE_SUFFIX_DROP']

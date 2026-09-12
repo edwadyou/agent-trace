@@ -281,7 +281,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     from .monitor import monitor
 
     sys.argv = [str(script), *args.script_args]
-    kwargs = {"service_name": args.service_name, "auto_instrument": True,
+    # --service-name is documented as "else use script filename": passing None
+    # produced an invalid OTel resource attribute (NoneType) plus a
+    # "get_tracer called with missing module name" warning.
+    service_name = args.service_name or script.stem
+    kwargs = {"service_name": service_name, "auto_instrument": True,
               "exporter": args.exporter, "trace_file": args.trace_file}
     if args.auto_detect:
         kwargs["auto_detect"] = True
