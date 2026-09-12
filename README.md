@@ -1,5 +1,7 @@
 # Local Agent Monitor
 
+**English** | [简体中文](README.zh-CN.md)
+
 Standalone local Agent monitoring -- trace execution without remote
 dependencies. **All traces are stored locally**; no data is ever sent to a
 remote collector.
@@ -103,7 +105,7 @@ streams one JSON object per span to a local file.
 
 ```bash
 # From this source checkout, use editable mode and combine extras:
-pip install -e "D:\my-projects\agent-monitor[langchain,openai]"
+pip install -e ".[langchain,openai]"
 
 # From an installed/wheel-based environment:
 # SDK core (just OTel + the monitor context manager)
@@ -127,7 +129,7 @@ pip install "agent-monitor[litellm]"              # LiteLLM
 pip install "agent-monitor[all-instruments]"
 
 # viewer + test tooling only
-pip install -e "D:\my-projects\agent-monitor[viewer,test]"
+pip install -e ".[viewer,test]"
 ```
 
 ### 2. Scaffold `instrument.py`
