@@ -42,10 +42,12 @@ render_*.txt
 .streamlit/secrets.toml
 
 # ============================================================================
-# IDE / editor
+# IDE / editor / tool state
 # ============================================================================
 .idea/
 .vscode/
+# Local agent workspace metadata (memory / scratch), not project source
+.workbuddy/
 *.swp
 *.swo
 .DS_Store
