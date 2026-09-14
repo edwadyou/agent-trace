@@ -233,6 +233,7 @@ def test_viewer_all_is_strings():
         "viewer_app.data", "viewer_app.format", "viewer_app.msg",
         "viewer_app.structured", "viewer_app.render_detail",
         "viewer_app.render_flowchart", "viewer_app.render_tracelist",
+        "viewer_app.render_activity",
     ):
         mod = importlib.import_module(mod_name)
         names = getattr(mod, "__all__", [])

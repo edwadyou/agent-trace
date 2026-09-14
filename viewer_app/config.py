@@ -210,7 +210,7 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
 .tree-row .tree-dur {
 
-    font-size: 10.5px; color: #9ca3af;
+    font-size: 10.5px; color: #cbd5e1;
 
     font-variant-numeric: tabular-nums;
 
@@ -222,7 +222,7 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
     background: transparent; border: none; cursor: pointer;
 
-    color: #9ca3af; font-size: 10px;
+    color: #cbd5e1; font-size: 10px;
 
     width: 18px; height: 18px;
 
@@ -324,12 +324,12 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
 .st-key-trace_list_scroll::-webkit-scrollbar-track { background: transparent; }
 
-/* ----- viewport-locked 3-column layout (so the side columns are the only
+/* ----- viewport-locked body layout (so the diagram / detail columns are the only
    things that scroll, not the whole page) -----
    Why: without these rules a tall detail panel pushes the body height
    past the viewport and Streamlit shows a page-level scrollbar; the user
    then ends up scrolling the entire app instead of the right column.
-   The three columns share whatever vertical room the page-header did not
+   The body columns share whatever vertical room the page-header did not
    take, so left/right can scroll independently and the middle
    (Mermaid) column keeps the height the component reports.
 
@@ -340,6 +340,65 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
    silently clipped whatever did not fit. */
 
 [data-testid="stHorizontalBlock"] { align-items: stretch; }
+
+/* ----- diagram/detail work surfaces ------------------------------------- */
+.st-key-activity_panel,
+.st-key-detail_panel {
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+}
+
+.st-key-activity_panel {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.55rem !important;
+}
+
+.st-key-activity_panel h4,
+.st-key-activity_panel [data-testid="stCaptionContainer"] p {
+    margin: 0 !important;
+}
+
+.st-key-activity_panel [data-testid="stCaptionContainer"] p {
+    line-height: 1.35 !important;
+}
+
+.st-key-detail_panel {
+    container-type: inline-size;
+    container-name: detail-panel;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+/* Let the custom Mermaid frame consume the activity card's remaining room.
+   The frame itself owns pan/zoom; the Streamlit column must never grow to the
+   SVG's natural (occasionally enormous) dimensions. */
+.st-key-activity_panel iframe {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 9px;
+}
+
+/* At the chosen 65/35 page ratio a laptop detail panel is often <560px.
+   Stack Input/Output only in that narrow container, without changing the
+   fixed four-column metadata grid elsewhere in the panel. */
+@container detail-panel (max-width: 560px) {
+    .st-key-detail_io [data-testid="stHorizontalBlock"] {
+        flex-direction: column !important;
+        gap: 0.65rem !important;
+    }
+
+    .st-key-detail_io [data-testid="stColumn"] {
+        width: 100% !important;
+        flex: 1 1 auto !important;
+    }
+}
 
 /* ----- right detail scroll container (mirror of trace list) ----- */
 .st-key-detail_scroll {
@@ -467,7 +526,7 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
        nearly invisible when the app ran with a light page background. */
 
-    color: var(--text-color, #1f2937) !important;
+    color: var(--text-color, #f1f5f9) !important;
 
     font-weight: 600 !important;
 
@@ -477,7 +536,7 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
     background: rgba(255,255,255,0.08) !important;
 
-    color: var(--text-color, #111827) !important;
+    color: var(--text-color, #ffffff) !important;
 
 }
 
@@ -543,7 +602,7 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
     letter-spacing: 0.06em;
 
-    color: #9ca3af;
+    color: #cbd5e1;
 
     font-weight: 700;
 
@@ -561,7 +620,7 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
 }
 
-.meta-kv .k { color: #9ca3af; }
+.meta-kv .k { color: #cbd5e1; }
 
 .meta-kv .v { color: #e5e7eb; font-family: ui-monospace, monospace; word-break: break-all; }
 
@@ -573,11 +632,11 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
    text and gives it tabular numeric + bold weight. */
 
-.meta-kv.strong .k { color: #4b5563; font-weight: 600; }
+.meta-kv.strong .k { color: #cbd5e1; font-weight: 600; }
 
 .meta-kv.strong .v {
 
-    color: #111827;                     /* gray-900, near-black */
+    color: #f8fafc;
 
     font-weight: 700;
 
@@ -605,7 +664,7 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
 .meta-pill.run   { background: rgba(245,158,11,0.18); color: #fde68a; }
 
-.meta-pill.unset { background: rgba(107,114,128,0.18); color: #d1d5db; }
+.meta-pill.unset { background: rgba(107,114,128,0.24); color: #e2e8f0; }
 
 
 
@@ -629,13 +688,13 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
     display: flex; align-items: center; gap: 8px;
 
-    font-size: 14px; font-weight: 600; color: #f3f4f6;
+    font-size: 14px; font-weight: 600; color: #f8fafc;
 
 }
 
 .detail-card .detail-sub {
 
-    color: #9ca3af; font-size: 11.5px; margin-top: 2px;
+    color: #cbd5e1; font-size: 11.5px; margin-top: 2px;
 
 }
 
@@ -647,11 +706,11 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
 }
 
-.detail-kv .k { color: #9ca3af; }
+.detail-kv .k { color: #cbd5e1; }
 
 .detail-kv .v {
 
-    color: #e5e7eb; word-break: break-all;
+    color: #f1f5f9; word-break: break-all;
 
     font-family: ui-monospace, monospace; font-size: 12px;
 
@@ -681,7 +740,7 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
 
 }
 
-.io-block-head .io-arrow { color: #9ca3af; font-size: 11px; }
+.io-block-head .io-arrow { color: #cbd5e1; font-size: 11px; }
 
 .io-block-body {
 
@@ -727,7 +786,7 @@ code, pre, .stCode, .stMarkdown code { font-family: ui-monospace, "JetBrains Mon
     position: sticky !important;
     top: -4px !important;
     z-index: 20 !important;
-    background: var(--background, #fff) !important;
+    background: var(--background-color, #0b1120) !important;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
 }
 
@@ -809,7 +868,7 @@ footer { visibility: hidden; }
 
     line-height: 1.45;
 
-    color: #d1d5db;
+    color: #e2e8f0;
 
 }
 
@@ -819,7 +878,7 @@ footer { visibility: hidden; }
 
     font-size: 10.5px;
 
-    color: #9ca3af;
+    color: #cbd5e1;
 
     background: rgba(255,255,255,0.02);
 
@@ -958,7 +1017,7 @@ footer { visibility: hidden; }
         overflow: visible !important;
     }
 
-    /* the 3-column body row is the one that owns the detail panel; it takes
+    /* the body row is the one that owns the detail panel; it takes
        all the room the page-header row left */
     [data-testid="stHorizontalBlock"]:has(.st-key-detail_scroll) {
         flex: 1 1 0% !important;
@@ -992,10 +1051,10 @@ footer { visibility: hidden; }
         flex-direction: column !important;
     }
 
-    /* the center (Mermaid) column scrolls instead of clipping when the
-       diagram is taller than the row */
+    /* The diagram column clips at the work-surface boundary. The embedded
+       component now owns its fixed viewport, pan and zoom. */
     [data-testid="stHorizontalBlock"]:has(.st-key-detail_scroll) > [data-testid="stColumn"]:not(:has(.st-key-detail_scroll)):not(:has(.st-key-trace_list_scroll)) {
-        overflow-y: auto !important;
+        overflow: hidden !important;
     }
 
     /* Streamlit puts an inline height:100% on the block inside a
@@ -1026,6 +1085,52 @@ footer { visibility: hidden; }
         overflow: visible !important;
         padding: 0 !important;
         margin: 0 !important;
+    }
+
+    /* Below laptop width the two work surfaces stack. The page becomes the
+       scroll owner again, otherwise the old viewport lock would make the
+       second panel unreachable below the fold. */
+    @media (max-width: 960px) {
+        [data-testid="stMain"],
+        [data-testid="stMain"] > :has(.block-container),
+        .block-container {
+            height: auto !important;
+            min-height: 100vh !important;
+            max-height: none !important;
+            overflow: visible !important;
+        }
+
+        [data-testid="stHorizontalBlock"]:has(.st-key-detail_scroll) {
+            flex-direction: column !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+        }
+
+        [data-testid="stHorizontalBlock"]:has(.st-key-detail_scroll) > [data-testid="stColumn"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+        }
+
+        .st-key-activity_panel {
+            height: 68vh !important;
+            min-height: 480px !important;
+            max-height: 760px !important;
+        }
+
+        .st-key-detail_panel {
+            height: auto !important;
+            max-height: none !important;
+        }
+
+        .st-key-detail_scroll {
+            flex: 0 0 auto !important;
+            height: auto !important;
+            max-height: 72vh !important;
+        }
     }
 
 </style>

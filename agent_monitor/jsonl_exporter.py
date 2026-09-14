@@ -31,6 +31,7 @@ Backward compatibility: 1.0.0 records missing ``schema_version`` /
 from __future__ import annotations
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,11 @@ SCHEMA_VERSION = "1.1.0"
 # contexts (or two `monitor()` calls in one process) from erasing each
 # other`s historical traces on the second-and-later construction.
 _TRUNCATED_FILES: set[str] = set()
+
+# Process-wide lock serializing JSONL writes. Module level rather than per
+# instance because two exporter objects can point at the same file (e.g. a
+# monitor() reactivated after an outer one released it).
+_WRITE_LOCK = threading.Lock()
 
 
 def _already_truncated(path: Path) -> bool:
@@ -109,10 +115,26 @@ class JsonlFileExporter(SpanExporter):
     def export(self, spans: list[ReadableSpan]) -> SpanExportResult:
         if not spans:
             return SpanExportResult.SUCCESS
-        with self.file_path.open("a", encoding="utf-8") as f:
-            for span in spans:
-                rec = _span_to_record(span, default_service_name=self._service_name)
-                f.write(json.dumps(rec, ensure_ascii=self._ensure_ascii) + "\n")
+        # Serialize the whole batch to bytes BEFORE touching the file, then
+        # emit it with one write() under a process-wide lock.
+        #
+        # Why: monitor() installs a SimpleSpanProcessor, so export() runs
+        # synchronously on whichever thread ends a span. A ThreadPoolExecutor
+        # fan-out therefore calls export() concurrently from many threads, and
+        # the old text-mode append handle let BufferedWriter flush a record in
+        # several chunks -- two interleaving threads produced a physical line
+        # spliced mid-record, i.e. unparsable JSONL. Binary mode additionally
+        # stops Windows from translating "\n" into "\r\n".
+        payload = b"".join(
+            json.dumps(
+                _span_to_record(span, default_service_name=self._service_name),
+                ensure_ascii=self._ensure_ascii,
+            ).encode("utf-8") + b"\n"
+            for span in spans
+        )
+        with _WRITE_LOCK:
+            with self.file_path.open("ab") as f:
+                f.write(payload)
         return SpanExportResult.SUCCESS
 
     def shutdown(self) -> None:

@@ -153,3 +153,14 @@ def test_render_instrument_template_replaces_placeholder_once():
     rendered = cli._render_instrument_template(["langchain", "openai"])
     assert 'INSTRUMENTORS = ["langchain", "openai"]' in rendered
     assert cli._FRAMEWORK_PLACEHOLDER not in rendered
+
+
+def test_rendered_template_creates_one_agent_root_span():
+    "The scaffold must ship the root span, not just the monitor() shell."
+    rendered = cli._render_instrument_template(["langchain", "openai"])
+
+    assert "ROOT_SPAN =" in rendered
+    assert ") as tracer:" in rendered
+    assert "tracer.start_as_current_span(" in rendered
+    assert '"openinference.span.kind": "AGENT"' in rendered
+    assert "root.set_status(Status(StatusCode.OK))" in rendered

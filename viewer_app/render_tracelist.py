@@ -43,6 +43,7 @@ def _short_purpose(name: str) -> str:
         decompose_claim        -> "Decompose Claim"
 
         _web_search            -> "Web Search"
+        my_agent_run           -> "My Agent Run"   (guard: never 1 word)
 
 
 
@@ -50,7 +51,9 @@ def _short_purpose(name: str) -> str:
 
     capital letters. Common "infra" suffixes (_executor, _run,
 
-    _agent, _chain, ...) are stripped. Result is capped at 4 words.
+    _agent, _chain, ...) are stripped - unless stripping would leave only a
+    single word, in which case the original words are kept. Result is capped
+    at 4 words.
 
     """
 
@@ -78,10 +81,16 @@ def _short_purpose(name: str) -> str:
 
     # drop trailing generic suffixes
 
+    original_parts = list(parts)
     while parts and parts[-1].lower() in _PURPOSE_SUFFIX_DROP:
 
         parts.pop()
 
+    if len(parts) < 2 and len(original_parts) >= 2:
+        # guard: never collapse a multi-word name down to a single word (or to
+        # nothing). "my_agent_run" reads "My Agent Run" instead of "My", and
+        # "AgentExecutor" reads "Agent Executor" instead of "Agentexecutor".
+        parts = original_parts
     if not parts:
 
         # all words were suffixes -> keep the raw cleaned name

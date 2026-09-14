@@ -1,59 +1,36 @@
 # -*- coding: utf-8 -*-
-# Main entry for the agent-monitor viewer (3-column layout).
+# Main entry for the agent-monitor viewer (layout "B": activity diagram + detail).
 # Originally the single-file ``viewer.py``; now assembled from the
 # ``viewer_app`` package. Run with:  streamlit run viewer.py
 from __future__ import annotations
-
-from collections import defaultdict
 
 import streamlit as st
 
 from . import state
 from .config import _CSS, _dbg
-from .data import _aggregate_kpi, _discover_trace_sources, _latest_start, load_traces
+from .data import _discover_trace_sources, _latest_start, load_traces
 from .format import _format_duration_ms, _kind_pill_html, _span_display_name
 from .render_detail import (
     _clear_focus, _jump_to_span, _render_detail_column, _render_detail_panel,
     _select_trace, _trace_start_ns, _render_run_tab, _render_feedback_tab,
     _render_metadata_tab, _render_span_meta,
 )
-from .render_flowchart import (
-    _mermaid_safe_id, _mermaid_label, _build_mermaid,
-    _render_flowchart_component, _render_flowchart_center,
-)
-from .render_tracelist import _render_trace_cards_list
+from .render_activity import _render_activity_center
 
 from viewer.normalize import span_kind
 
 
-def _render_flowchart_mode(sel_spans, kpi, all_by_id):
+def _render_activity_mode(all_spans, all_by_id, *, n_traces=1):
+    """Layout "B": one activity diagram (every span, every trace) + the span
+    detail column.
 
-    # Restore the trace from the URL after a page reload / deep link.  The URL
-
-    # is only READ here (never navigated to), so this cannot cause the
-
-    # "click -> page jumps" behaviour.
-
-    _url_trace = st.query_params.get('trace')
-
-    if _url_trace and _url_trace in state.traces:
-
-        if st.session_state.selected_trace != _url_trace:
-
-            st.session_state.selected_trace = _url_trace
-
-            sel_spans = state.traces[_url_trace]
-
-            all_by_id = {s['span_id']: s for s in sel_spans}
-
-            kpi = _aggregate_kpi(sel_spans)
-
-    # Deep-link focus: apply ?focus= exactly once per session (right after a
-
-    # page reload).  Afterwards, st.session_state.selected_span is the single
-
-    # source of truth; "back to overview" must not be undone by a stale URL.
-
+    The old three-column body rendered a per-trace card list on the left and a
+    single-trace Mermaid flowchart in the middle, and refused to draw more than
+    80 nodes. This view replaces both with one tree rooted at the trace root
+    span, so a 100+ span run is shown in full.
+    """
+    # Deep-link focus: applied once per session (right after a reload). The URL
+    # is only READ here, never navigated to, so it cannot cause a page jump.
     if not st.session_state.get('_url_focus_applied'):
 
         f = st.query_params.get('focus')
@@ -72,27 +49,21 @@ def _render_flowchart_mode(sel_spans, kpi, all_by_id):
 
         cur_sel = None
 
-    col_left, col_center, col_right = st.columns([1.1, 1.8, 2.6])  # trace list / flowchart / span detail; right panel fixed at 2.60
+    # Diagram-first desktop layout.  The detail panel remains fully usable at
+    # 35% because its input/output row stacks via a container query when the
+    # column is narrow; the CSS also turns this row into a vertical layout on
+    # sub-960px viewports.
+    col_main, col_right = st.columns([13, 7], gap="small")
 
-    with col_left:
-
-        _render_trace_cards_list()
-
-    with col_center:
-
-        _render_flowchart_center(
-
-            sel_spans,
-
-            focus=cur_sel or None,
-
-            trace_id=st.session_state.selected_trace,
-
-        )
+    with col_main:
+        with st.container(key="activity_panel", border=False, height="stretch"):
+            _render_activity_center(
+                all_spans, focus=cur_sel or None, n_traces=n_traces
+            )
 
     with col_right:
-
-        _render_detail_column(sel_spans, all_by_id)
+        with st.container(key="detail_panel", border=False, height="stretch"):
+            _render_detail_column(all_spans, all_by_id)
 
 
 def run():
@@ -267,75 +238,27 @@ def run():
         else:
 
             pass  # single-source mode: do not render the raw path caption
-    # ---------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # Layout "B" body: every span of every trace in the source, as one tree.
+    # -------------------------------------------------------------------------
+    all_spans = [s for tid in trace_ids for s in state.traces[tid]]
 
-    # Build filtered span list + tree structure
+    if not all_spans:
 
-    # ---------------------------------------------------------------------------
-    sel_tid = st.session_state.selected_trace
-
-    sel_spans = state.traces[sel_tid] if sel_tid else []
-
-    kpi = _aggregate_kpi(sel_spans)
-
-
-
-
-
-    all_by_id = {s["span_id"]: s for s in sel_spans}
-
-    filtered_spans = list(sel_spans)
-
-
-
-    # Parent/child map (over filtered spans)
-
-    spans_sorted = sorted(filtered_spans, key=lambda s: int(s.get("start_time", 0)))
-
-    by_id = {s["span_id"]: s for s in spans_sorted}
-
-    children_map: dict = defaultdict(list)
-
-    roots: list = []
-
-    for s in spans_sorted:
-
-        pid = s.get("parent_span_id")
-
-        if pid and pid in by_id:
-
-            children_map[pid].append(s)
-
-        else:
-
-            roots.append(s)
-
-    for c in children_map.values():
-
-        c.sort(key=lambda s: int(s.get("start_time", 0)))
-
-    # 3-column body
-
-    # ===========================================================================
-
-    _dbg(f"BODY: sel_tid={st.session_state.selected_trace!r}, sel_spans count={len(sel_spans)}, first span kind={sel_spans[0].get("kind") if sel_spans else None!r}")
-
-    if not sel_spans:
-
-        st.info("当前 trace 中没有 span，请运行你的 agent 后刷新。")
+        st.info("当前数据源中没有 span，请运行你的 agent 后刷新。")
 
         st.stop()
 
+    all_by_id = {s["span_id"]: s for s in all_spans}
 
+    _dbg(f"BODY: {len(all_spans)} span(s) over {len(trace_ids)} trace(s)")
 
-    _render_flowchart_mode(
+    _render_activity_mode(
 
-        sel_spans,
+        all_spans,
 
-        kpi,
+        all_by_id,
 
-        all_by_id={s['span_id']: s for s in sel_spans},
+        n_traces=len(trace_ids),
 
     )
-
-

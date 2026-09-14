@@ -4,9 +4,13 @@ Usage::
 
     python -m agent_monitor init  [--framework auto|<name>] [--out PATH]
                                   [--no-install-deps] [--no-install-streamlit]
-    python -m agent_monitor run   SCRIPT.py [--exporter jsonl|console]
-                                       [--service-name NAME] [--auto-detect]
-                                       [--trace-file PATH]
+    python -m agent_monitor run   [--root-span NAME | --no-root-span]
+                                  [--no-auto-detect] [--exporter jsonl|console]
+                                  [--service-name NAME] [--trace-file PATH]
+                                  SCRIPT.py [SCRIPT ARGS...]
+                                       # NOTE: every flag must come BEFORE the
+                                       # script path -- anything after it is
+                                       # forwarded to the script verbatim.
     python -m agent_monitor detect [--json]
     python -m agent_monitor verify [--trace-file PATH] [--min-spans N]
                                    [--require-kind LLM|CHAIN|...]
@@ -21,8 +25,15 @@ Designed so a new agent user can type four commands and be done:
                                    # combined OpenInference extras, then writes
                                    # instrument.py
     python instrument.py            # writes latest_traces.jsonl
-    streamlit run D:/my-projects/agent-monitor/viewer.py
-                                   # browser live view
+    python -m agent_monitor view    # browser live view
+
+Two ways to trace a script WITHOUT touching it:
+
+    python -m agent_monitor run run.py
+                                       # one AGENT root span around the whole run
+    OTEL_PYTHON_DISTRO=agent-monitor opentelemetry-instrument python run.py
+                                       # zero-code: no root span, one trace per
+                                       # framework root run
 
 What `init --framework auto` installs:
 
@@ -264,10 +275,68 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(f"[init] could not write template: {exc}", file=sys.stderr)
         return 1
     print(f"[init] wrote {out.resolve()}  ({out.stat().st_size} bytes)")
-    print(f"[init] next: python {out.name}     # writes latest_traces.jsonl")
+    print(f"[init] next: edit ROOT_SPAN + the entry-point import in {out.name}")
+    print(f"[init] then: python {out.name}     # writes latest_traces.jsonl")
     if not args.no_install_streamlit:
-        print(f"[init] then: streamlit run D:/my-projects/agent-monitor/viewer.py")
+        print("[init] view: python -m agent_monitor view")
     return 0
+
+
+def _report_orphan_traces(trace_path: Path, root_name: str) -> None:
+    """Warn when a run that got a root span still produced several trace trees.
+
+    A trace is a tree, not a container: every span without a parent is the root
+    of its own tree. One injected root span should adopt every top-level call
+    the script makes, so extra roots mean the context never reached part of the
+    run. Diagnostics only -- this never raises and never changes the exit code.
+    """
+    try:
+        from ._verify_export import orphan_trace_report
+        report = orphan_trace_report(trace_path)
+    except Exception:  # pragma: no cover - a broken report must not break a run
+        return
+    roots = report.get("roots") or []
+    if len(roots) <= 1:
+        return
+    orphans = [r for r in roots if r[1] != root_name] or roots[1:]
+    shown = orphans[:10]
+    print(
+        f"[run] warning: this run produced {report['trace_count']} separate "
+        f"traces ({report['span_count']} spans), not one.",
+        file=sys.stderr,
+    )
+    print(f"[run]   expected root {root_name!r}, found {len(orphans)} "
+          f"orphan root(s):", file=sys.stderr)
+    for trace_id, name, kind, _start in shown:
+        print(f"[run]     - {name!r} ({kind}) trace {trace_id[:8]}",
+              file=sys.stderr)
+    if len(orphans) > len(shown):
+        print(f"[run]     ... and {len(orphans) - len(shown)} more",
+              file=sys.stderr)
+    print(
+        "[run]   Orphan roots mean trace context was lost. Usual causes:\n"
+        "[run]     * a thread or pool worker started before monitoring was active;\n"
+        "[run]     * multiprocessing / Celery -- contextvars cannot cross processes;\n"
+        "[run]     * --no-thread-context, or AGENT_MONITOR_THREAD_CONTEXT=0.\n"
+        "[run]   Re-run without those to get a single tree.",
+        file=sys.stderr,
+    )
+
+
+def _parse_instrumentors(raw):
+    """``"langchain, openai"`` -> ``["langchain", "openai"]``.
+
+    ``None`` (or an explicit ``all`` / ``auto`` / ``*``) means "no restriction":
+    both mean the same thing downstream, where the allow-list is applied as a
+    filter over whatever the run resolved on its own.
+    """
+    if not raw:
+        return None
+    names = [p.strip() for p in str(raw).replace(";", ",").split(",")]
+    names = [n for n in names if n]
+    if not names or any(n.lower() in {"*", "all", "auto", "any"} for n in names):
+        return None
+    return names
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -278,7 +347,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 2
 
     # Defer heavy imports until we actually need them.
-    from .monitor import monitor
+    from .monitor import DEFAULT_TRACE_FILE, monitor
+    from opentelemetry.trace import Status, StatusCode
 
     sys.argv = [str(script), *args.script_args]
     # --service-name is documented as "else use script filename": passing None
@@ -286,11 +356,85 @@ def cmd_run(args: argparse.Namespace) -> int:
     # "get_tracer called with missing module name" warning.
     service_name = args.service_name or script.stem
     kwargs = {"service_name": service_name, "auto_instrument": True,
-              "exporter": args.exporter, "trace_file": args.trace_file}
-    if args.auto_detect:
-        kwargs["auto_detect"] = True
-    with monitor(**kwargs):
-        runpy.run_path(str(script), run_name="__main__")
+              "exporter": args.exporter, "trace_file": args.trace_file,
+              "thread_context": args.thread_context}
+    allowlist = _parse_instrumentors(args.instrumentors)
+    if allowlist:
+        # An explicit list makes auto-detect moot: monitor() documents that
+        # `instrumentors` wins over `auto_detect`, so running detection anyway
+        # would only print advice about a decision already made.
+        kwargs["instrumentors"] = allowlist
+        print(f"[run] instrumentor allow-list: {', '.join(allowlist)}",
+              file=sys.stderr)
+    if "instrumentors" not in kwargs and args.auto_detect:
+        # auto-detect is the default for `run`: it activates exactly the
+        # instrumentors whose framework is importable, instead of every
+        # installed instrumentor. If it finds nothing to go on (framework not
+        # in our map, or none installed) fall back to the old behaviour rather
+        # than silently instrumenting nothing at all.
+        from ._detect import detect_compatible, detect_installed_instrumentors
+        try:
+            detected = detect_compatible()
+        except Exception as exc:  # pragma: no cover
+            detected = []
+            print(f"[run] auto-detect failed ({exc}); instrumenting every "
+                  "installed instrumentor instead", file=sys.stderr)
+        if detected:
+            kwargs["auto_detect"] = True
+        elif detect_installed_instrumentors():
+            # Instrumentors are installed but their framework SDK is not (or the
+            # framework is not one we know how to detect). Fall back to the old
+            # "try everything" behaviour -- each missing SDK reports its own
+            # DependencyConflict -- and say so, since it is not what the default
+            # advertises.
+            print("[run] auto-detect found no framework+instrumentor pair; "
+                  "instrumenting every installed instrumentor instead",
+                  file=sys.stderr)
+
+    # One AGENT root span for the whole run: without it every top-level call the
+    # script makes becomes its own trace, and the viewer lists one row per call
+    # instead of one row per run. Framework root runs adopt it as their parent
+    # (OpenInference passes context=None for a run without a parent_run_id, so
+    # the SDK falls back to the ambient span).
+    root_name = args.root_span or script.stem
+    with monitor(**kwargs) as tracer:
+        if args.root_span_enabled:
+            # Ordinary exceptions are NOT caught: start_as_current_span records
+            # them and sets ERROR status, then the traceback propagates exactly
+            # as before. SystemExit is the one exception -- see below.
+            with tracer.start_as_current_span(
+                root_name,
+                attributes={"openinference.span.kind": "AGENT"},
+            ) as root:
+                try:
+                    runpy.run_path(str(script), run_name="__main__")
+                except SystemExit as exc:
+                    # ``raise SystemExit(main())`` is how a normal CLI entry
+                    # point ends, and OpenTelemetry deliberately records only
+                    # Exception -- never BaseException -- so a script that exits
+                    # this way used to leave the root span UNSET, i.e. every
+                    # viewer showed the run as "unfinished" and the line below
+                    # was simply unreachable. Exit 0 (or None) is success and
+                    # falls through to the shared set_status; any other code is
+                    # a real failure, so record it and keep propagating it.
+                    if exc.code not in (None, 0):
+                        root.set_status(
+                            Status(StatusCode.ERROR, f"SystemExit: {exc.code}")
+                        )
+                        raise
+                root.set_status(Status(StatusCode.OK))
+        else:
+            # --no-root-span: the script's own framework (FastAPI / Celery /
+            # LangGraph ...) already emits a root, and a second one would just
+            # add an empty wrapper row in the viewer.
+            runpy.run_path(str(script), run_name="__main__")
+
+    # monitor() has flushed and shut the exporter down by now, so the file is
+    # complete. Only meaningful when WE synthesised the root: with
+    # --no-root-span (or a non-file exporter) several trees are expected.
+    if args.root_span_enabled and args.exporter == "jsonl":
+        _report_orphan_traces(Path(args.trace_file or DEFAULT_TRACE_FILE),
+                              root_name)
     return 0
 
 
@@ -312,6 +456,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         expected_path=args.trace_file,
         min_spans=args.min_spans,
         min_traces=args.min_traces,
+        max_traces=args.max_traces,
         require_kind_in=require,
         quiet=args.quiet,
     )
@@ -396,16 +541,48 @@ def _build_parser() -> argparse.ArgumentParser:
     p_init.set_defaults(func=cmd_init)
 
     p_run = sub.add_parser("run", help="wrap a script in monitor() and execute")
-    p_run.add_argument("script", help="user script to run")
+    # Every flag is declared BEFORE `script`: `script_args` uses
+    # nargs=REMAINDER, so anything written after the script path is forwarded to
+    # the script verbatim instead of being parsed here.
+    p_run.add_argument("--root-span", default=None,
+                       help="name of the single AGENT root span wrapped around "
+                            "the whole run (default: the script filename stem)")
+    p_run.add_argument("--no-root-span", dest="root_span_enabled",
+                       action="store_false",
+                       help="do not wrap the run in a root span; use this when "
+                            "the script's framework already emits its own root "
+                            "(FastAPI / Celery / LangGraph), otherwise you get "
+                            "a double root")
+    p_run.set_defaults(root_span_enabled=True)
+    p_run.add_argument("--no-thread-context", dest="thread_context",
+                       action="store_false",
+                       help="do NOT propagate trace context into threads. It is "
+                            "propagated by default (ThreadPoolExecutor.submit / "
+                            "threading.Thread), which is what keeps pool tasks "
+                            "inside this run's trace instead of one orphan trace "
+                            "per task; turn it off only if the patch conflicts "
+                            "with your own")
+    p_run.set_defaults(thread_context=True)
+    p_run.add_argument("--auto-detect", action=argparse.BooleanOptionalAction,
+                       default=True,
+                       help="activate exactly the instrumentors whose framework "
+                            "is importable (default: on; --no-auto-detect "
+                            "instruments every installed instrumentor instead)")
     p_run.add_argument("--exporter", default="jsonl",
                        choices=["jsonl", "console"],
                        help="exporter alias (default jsonl)")
+    p_run.add_argument("--instrumentors", default=None,
+                       help="comma-separated allow-list of instrumentor "
+                            "framework keys to activate, e.g. 'langchain' or "
+                            "'openai,anthropic' ('all'/'auto' = no restriction). "
+                            "Use 'langchain' on a langchain-openai app to drop "
+                            "the duplicate ChatCompletion span the openai "
+                            "instrumentor adds to every LLM call")
     p_run.add_argument("--trace-file", default=None,
                        help="output path when exporter=jsonl")
     p_run.add_argument("--service-name", default=None,
                        help="override service.name (else use script filename)")
-    p_run.add_argument("--auto-detect", action="store_true",
-                       help="let agent_monitor sniff instrumentors at runtime")
+    p_run.add_argument("script", help="user script to run")
     p_run.add_argument("script_args", nargs=argparse.REMAINDER,
                        help="arguments forwarded to the user script")
     p_run.set_defaults(func=cmd_run)
@@ -421,6 +598,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_ver.add_argument("--trace-file", default="latest_traces.jsonl")
     p_ver.add_argument("--min-spans", type=int, default=1)
     p_ver.add_argument("--min-traces", type=int, default=1)
+    p_ver.add_argument("--max-traces", type=int, default=None,
+                       help="fail when the export holds more than this many "
+                            "distinct traces; use --max-traces 1 in CI to assert "
+                            "that one agent run is one trace tree")
     p_ver.add_argument("--require-kind", action="append", default=[],
                        help="repeatable; require at least one span with this kind")
     p_ver.add_argument("--quiet", action="store_true")

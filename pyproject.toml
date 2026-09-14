@@ -6,6 +6,13 @@ requires-python = ">=3.10"
 dependencies = [
     "opentelemetry-api>=1.20",
     "opentelemetry-sdk>=1.20",
+    # Provides the `opentelemetry-instrument` command, `BaseDistro` and the
+    # sitecustomize hook that agent_monitor/distro.py plugs into. It was already
+    # a transitive dependency of openinference-instrumentation; the zero-code
+    # entry point needs it whether or not any framework extra is installed.
+    # (opentelemetry-distro is NOT needed: _load_distro() falls back to
+    # DefaultDistro when OTEL_PYTHON_DISTRO names our entry point.)
+    "opentelemetry-instrumentation>=0.51b0",
 ]
 
 [project.optional-dependencies]
@@ -68,6 +75,14 @@ viewer = [
 test = [
     "pytest>=7",
 ]
+
+# Zero-code entry point: `OTEL_PYTHON_DISTRO=agent-monitor
+# opentelemetry-instrument python run.py` picks this up and starts writing
+# ./latest_traces.jsonl without a single line of instrumentation code.
+# Must be re-installed (`pip install -e .`) after editing this table -- entry
+# points are read from the installed dist-info, not from the source tree.
+[project.entry-points.opentelemetry_distro]
+agent-monitor = "agent_monitor.distro:AgentMonitorDistro"
 
 [build-system]
 requires = ["hatchling"]

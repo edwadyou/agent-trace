@@ -123,7 +123,7 @@ def _render_detail_panel(all_spans: list, *, by_id_all: dict) -> None:
 
         st.markdown(
 
-            '<div class="detail-card" style="text-align:center;color:#9ca3af;'
+            '<div class="detail-card" style="text-align:center;color:#cbd5e1;'
 
             'padding:36px 16px;">'
 
@@ -244,7 +244,11 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
 
     # --- Input / Output side-by-side (headers aligned; each side scrolls independently) --
 
-    c_in, c_out = st.columns(2, gap="medium")
+    # The diagram-first page gives this panel 35% of the desktop width.  The
+    # keyed wrapper is a CSS container: below 560px its two Streamlit columns
+    # stack vertically instead of squeezing long messages into tiny cards.
+    io_wrap = st.container(key="detail_io")
+    c_in, c_out = io_wrap.columns(2, gap="medium")
 
 
 
@@ -440,7 +444,7 @@ def _render_run_tab(span: dict, *, is_err: bool, err: dict | None) -> None:
 
                     st.markdown(
 
-                        f'<div style="font-size:12px;color:#9ca3af;margin-bottom:4px">' +
+                        f'<div style="font-size:12px;color:#cbd5e1;margin-bottom:4px">' +
 
                         f'<b style="color:#e5e7eb">{_esc(ename)}</b>  ·  ' +
 
@@ -535,7 +539,7 @@ def _render_feedback_tab(span: dict) -> None:
 
         st.markdown(
 
-            '<div class="detail-card" style="text-align:center;color:#9ca3af;'
+            '<div class="detail-card" style="text-align:center;color:#cbd5e1;'
 
             'padding:30px 16px;">'
 
@@ -565,7 +569,7 @@ def _render_feedback_tab(span: dict) -> None:
 
                 f'<b>{_esc(fb.get("name", "feedback"))}</b>  '
 
-                f'<span style="color:#9ca3af">{_esc(fb.get("comment", ""))}</span>'
+                f'<span style="color:#cbd5e1">{_esc(fb.get("comment", ""))}</span>'
 
                 f'</div>',
 

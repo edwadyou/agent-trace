@@ -3,67 +3,347 @@
 <head>
 <meta charset="utf-8">
 <style>
-  body{margin:0;padding:8px;background:transparent;color:#e5e7eb;font-family:ui-system,system-ui,sans-serif;}
-  .mermaid{background:rgba(255,255,255,0.02);border-radius:8px;padding:8px;overflow-x:auto;}
-  .node{cursor:pointer;}
-  .node:hover rect,.node:hover polygon{filter:brightness(1.25);}
-  /* 点击后本地即时高亮 */
-  g.focused-node rect, g.focused-node polygon{stroke:#facc15 !important;stroke-width:3px !important;}
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: transparent;
+    color: #e5e7eb;
+    font-family: ui-system, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .diagram-shell {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100vh;
+    min-height: 320px;
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 9px;
+    background: rgba(2, 6, 23, 0.42);
+  }
+  .diagram-toolbar {
+    flex: 0 0 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 5px 7px 5px 10px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    background: rgba(15, 23, 42, 0.78);
+    user-select: none;
+  }
+  .diagram-hint {
+    min-width: 0;
+    color: #94a3b8;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .diagram-tools { display: flex; align-items: center; gap: 4px; }
+  .diagram-tools button,
+  .zoom-readout {
+    height: 27px;
+    min-width: 29px;
+    padding: 0 8px;
+    border: 1px solid rgba(148, 163, 184, 0.23);
+    border-radius: 6px;
+    background: rgba(30, 41, 59, 0.82);
+    color: #e2e8f0;
+    font: 600 11px/25px ui-system, system-ui, sans-serif;
+  }
+  .diagram-tools button { cursor: pointer; }
+  .diagram-tools button:hover {
+    border-color: rgba(96, 165, 250, 0.72);
+    background: rgba(51, 65, 85, 0.95);
+  }
+  .diagram-tools button:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 1px;
+  }
+  .diagram-tools .text-button { min-width: 42px; }
+  .zoom-readout {
+    min-width: 48px;
+    color: #bfdbfe;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  #diagram-viewport {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.13) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+  #diagram-viewport.dragging { cursor: grabbing; }
+  #diagram-canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+  #diagram-canvas.animate { transition: transform 160ms ease-out; }
+  #m_container, .mermaid { width: max-content; height: max-content; }
+  .mermaid { padding: 0; background: transparent; }
+  .mermaid svg {
+    display: block;
+    max-width: none !important;
+    height: auto;
+    overflow: visible;
+  }
+  .activity-name {
+    display: inline-block;
+    max-width: 240px;
+    color: #f8fafc;
+    font-weight: 650;
+    line-height: 1.25;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    overflow: visible;
+  }
+  .activity-meta {
+    color: #cbd5e1;
+    font-size: 10.5px;
+    letter-spacing: 0.025em;
+  }
+  .node { cursor: pointer; }
+  .nodeLabel, .label, .label foreignObject { overflow: visible !important; }
+  .node:hover rect, .node:hover polygon, .node:hover path { filter: brightness(1.18); }
+  g.focused-node rect, g.focused-node polygon, g.focused-node path {
+    stroke: #facc15 !important;
+    stroke-width: 3px !important;
+    filter: drop-shadow(0 0 4px rgba(250, 204, 21, 0.42));
+  }
+  .render-error {
+    margin: 12px;
+    color: #fca5a5;
+    white-space: pre-wrap;
+    font: 12px/1.45 ui-monospace, monospace;
+  }
+  @media (max-width: 620px) {
+    .diagram-hint { display: none; }
+    .diagram-toolbar { justify-content: flex-end; }
+  }
 </style>
 <script src="mermaid.min.js"></script>
 </head>
 <body>
-<div id="m_container"></div>
+<div class="diagram-shell">
+  <div class="diagram-toolbar">
+    <div class="diagram-hint" title="▶/■ 开始/结束 · 双线框 ×N 重复组 · 六边形 并行/汇聚 · 拖动画布 · Ctrl/⌘ + 滚轮缩放">
+      ▶/■ 起止 · 双线框 ×N · 六边形 并行/汇聚 · 拖动 · Ctrl/⌘ + 滚轮缩放
+    </div>
+    <div class="diagram-tools" role="toolbar" aria-label="活动图缩放">
+      <button type="button" data-action="zoom-out" aria-label="缩小" title="缩小">−</button>
+      <span id="zoom-readout" class="zoom-readout" aria-live="polite">100%</span>
+      <button type="button" data-action="zoom-in" aria-label="放大" title="放大">+</button>
+      <button type="button" class="text-button" data-action="fit" title="适应窗口">适应</button>
+      <button type="button" class="text-button" data-action="actual" title="显示为 100%">100%</button>
+    </div>
+  </div>
+  <div id="diagram-viewport">
+    <div id="diagram-canvas"><div id="m_container"></div></div>
+  </div>
+</div>
 <script>
 (function(){
-  // ---------- Streamlit v1 组件双向通信（手写 postMessage 协议，零外部依赖） ----------
+  // Existing Streamlit v1 component protocol. Kept intentionally for package
+  // compatibility; this file only extends the established component.
   function send(type, data){
     var out = Object.assign({isStreamlitMessage:true, type:type}, data||{});
     window.parent.postMessage(out, "*");
   }
   function setValue(v){ send("streamlit:setComponentValue", {value:v, dataType:"json"}); }
-  function setHeight(h){ send("streamlit:setFrameHeight", {height: h}); }
+  function setHeight(h){ send("streamlit:setFrameHeight", {height:h}); }
   send("streamlit:componentReady", {apiVersion:1});
 
+  var MIN_SCALE = 0.15;
+  var MAX_SCALE = 3.0;
+  var FIT_PADDING = 24;
+  var DRAG_THRESHOLD = 5;
   var currentSrc = "";
+  var currentFocus = "";
   var mermaidInitialized = false;
+  var naturalWidth = 1;
+  var naturalHeight = 1;
+  var scale = 1;
+  var translateX = 0;
+  var translateY = 0;
+  var fitMode = true;
+  var lastViewportWidth = 0;
+  var lastViewportHeight = 0;
+  var suppressNodeClick = false;
+
+  var viewport = document.getElementById("diagram-viewport");
+  var canvas = document.getElementById("diagram-canvas");
+  var container = document.getElementById("m_container");
+  var zoomReadout = document.getElementById("zoom-readout");
+
+  function clamp(value, lo, hi){ return Math.max(lo, Math.min(hi, value)); }
+
+  function syncFrameHeight(){
+    var height = 680;
+    try {
+      var frame = window.frameElement;
+      var frameRect = frame.getBoundingClientRect();
+      var lowerEdge = window.parent.innerHeight - 14;
+      // On desktop the bordered activity surface can end slightly above the
+      // browser viewport. Respect that real boundary so Streamlit never clips
+      // the bottom of the component (most visible at 1280x800).
+      var panel = frame.closest(".st-key-activity_panel");
+      if(panel){
+        lowerEdge = Math.min(lowerEdge, panel.getBoundingClientRect().bottom - 8);
+      }
+      height = lowerEdge - frameRect.top;
+    } catch (_err) {}
+    setHeight(clamp(Math.round(height), 360, 900));
+  }
+
+  function updateReadout(){ zoomReadout.textContent = Math.round(scale * 100) + "%"; }
+
+  function applyTransform(animate){
+    canvas.classList.toggle("animate", Boolean(animate));
+    canvas.style.transform = "translate(" + translateX + "px," + translateY + "px) scale(" + scale + ")";
+    updateReadout();
+    lastViewportWidth = viewport.clientWidth;
+    lastViewportHeight = viewport.clientHeight;
+    if(animate){ window.setTimeout(function(){ canvas.classList.remove("animate"); }, 180); }
+  }
+
+  function graphCenterSnapshot(){
+    return {
+      xRatio: naturalWidth ? ((lastViewportWidth / 2 - translateX) / scale) / naturalWidth : 0.5,
+      yRatio: naturalHeight ? ((lastViewportHeight / 2 - translateY) / scale) / naturalHeight : 0.5,
+      scale: scale
+    };
+  }
+
+  function fitGraph(animate){
+    var vw = Math.max(1, viewport.clientWidth);
+    var vh = Math.max(1, viewport.clientHeight);
+    scale = clamp(Math.min(
+      Math.max(1, vw - FIT_PADDING * 2) / naturalWidth,
+      Math.max(1, vh - FIT_PADDING * 2) / naturalHeight
+    ), MIN_SCALE, MAX_SCALE);
+    translateX = (vw - naturalWidth * scale) / 2;
+    translateY = (vh - naturalHeight * scale) / 2;
+    fitMode = true;
+    applyTransform(animate);
+  }
+
+  function showActualSize(){
+    var vw = Math.max(1, viewport.clientWidth);
+    var vh = Math.max(1, viewport.clientHeight);
+    scale = 1;
+    translateX = (vw - naturalWidth) / 2;
+    translateY = (vh - naturalHeight) / 2;
+    fitMode = false;
+    applyTransform(true);
+  }
+
+  function zoomAt(factor, clientX, clientY, animate){
+    var rect = viewport.getBoundingClientRect();
+    var px = clientX - rect.left;
+    var py = clientY - rect.top;
+    var graphX = (px - translateX) / scale;
+    var graphY = (py - translateY) / scale;
+    var next = clamp(scale * factor, MIN_SCALE, MAX_SCALE);
+    translateX = px - graphX * next;
+    translateY = py - graphY * next;
+    scale = next;
+    fitMode = false;
+    applyTransform(animate);
+  }
+
+  function zoomFromCenter(factor){
+    var rect = viewport.getBoundingClientRect();
+    zoomAt(factor, rect.left + rect.width / 2, rect.top + rect.height / 2, true);
+  }
+
+  function restoreSnapshot(snapshot){
+    var vw = Math.max(1, viewport.clientWidth);
+    var vh = Math.max(1, viewport.clientHeight);
+    scale = clamp(snapshot.scale, MIN_SCALE, MAX_SCALE);
+    translateX = vw / 2 - snapshot.xRatio * naturalWidth * scale;
+    translateY = vh / 2 - snapshot.yRatio * naturalHeight * scale;
+    fitMode = false;
+    applyTransform(false);
+  }
+
+  function measureGraph(){
+    var svg = container.querySelector("svg");
+    if(!svg) return false;
+    var viewBox = svg.viewBox && svg.viewBox.baseVal;
+    naturalWidth = Math.max(1, viewBox && viewBox.width ? viewBox.width : svg.getBoundingClientRect().width);
+    naturalHeight = Math.max(1, viewBox && viewBox.height ? viewBox.height : svg.getBoundingClientRect().height);
+    svg.setAttribute("width", naturalWidth);
+    svg.setAttribute("height", naturalHeight);
+    svg.style.maxWidth = "none";
+    canvas.style.width = naturalWidth + "px";
+    canvas.style.height = naturalHeight + "px";
+    return true;
+  }
 
   function spanIdOf(node){
-    var d = node.getAttribute("data-span-id");
-    if(d) return d;
+    var explicit = node.getAttribute("data-span-id");
+    if(explicit) return explicit;
     var id = node.id || (node.querySelector("[id]") ? node.querySelector("[id]").id : "");
-    var m = (id||"").match(/n_[A-Za-z0-9_]+/);
-    if(m) return m[0].replace(/^n_/,"").replace(/_/g,"-");
-    return "";
+    var match = (id || "").match(/n_[A-Za-z0-9_]+/);
+    return match ? match[0].replace(/^n_/, "").replace(/_/g, "-") : "";
   }
 
   function applyFocus(focus){
-    document.querySelectorAll("#m_container .node").forEach(function(n){
-      var sid = spanIdOf(n);
-      if(sid) n.classList.toggle("focused-node", focus ? (sid === focus) : false);
+    container.querySelectorAll(".node").forEach(function(node){
+      var sid = spanIdOf(node);
+      if(sid) node.classList.toggle("focused-node", focus ? sid === focus : false);
     });
+    currentFocus = focus || "";
+  }
+
+  function revealFocusIfNeeded(focus){
+    if(!focus) return;
+    var target = Array.from(container.querySelectorAll(".node")).find(function(node){
+      return spanIdOf(node) === focus;
+    });
+    if(!target) return;
+    var vr = viewport.getBoundingClientRect();
+    var nr = target.getBoundingClientRect();
+    var margin = 30;
+    if(nr.left >= vr.left + margin && nr.right <= vr.right - margin &&
+       nr.top >= vr.top + margin && nr.bottom <= vr.bottom - margin) return;
+    translateX += (vr.left + vr.width / 2) - (nr.left + nr.width / 2);
+    translateY += (vr.top + vr.height / 2) - (nr.top + nr.height / 2);
+    fitMode = false;
+    applyTransform(true);
   }
 
   function bindNode(node, traceId){
     if(node.getAttribute("data-bound")) return;
-    node.setAttribute("data-bound","1");
+    node.setAttribute("data-bound", "1");
     if(!node.getAttribute("data-span-id")){
-      var s = spanIdOf(node); if(s) node.setAttribute("data-span-id", s);
+      var sid = spanIdOf(node);
+      if(sid) node.setAttribute("data-span-id", sid);
     }
-    node.addEventListener("click", function(ev){
-      var s = node.getAttribute("data-span-id") || spanIdOf(node);
-      if(!s) return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      applyFocus(s);                                  // 本地即时高亮（无需等后端）
-      // ts 每次点击都不同 -> Python 端能区分"新点击"与"旧值残留"，
-      // 从而支持：点击节点 -> 返回全貌 -> 再点同一节点 的完整循环。
-      setValue({span_id: s, trace_id: traceId || "", ts: Date.now()});
+    node.addEventListener("click", function(event){
+      if(suppressNodeClick) return;
+      var sid = node.getAttribute("data-span-id") || spanIdOf(node);
+      if(!sid) return;
+      event.preventDefault();
+      event.stopPropagation();
+      applyFocus(sid);
+      setValue({span_id:sid, trace_id:traceId || "", ts:Date.now()});
     });
   }
 
   function scan(traceId){
-    document.querySelectorAll("#m_container .node").forEach(function(n){ bindNode(n, traceId); });
+    container.querySelectorAll(".node").forEach(function(node){ bindNode(node, traceId); });
   }
 
   function ensureMermaid(){
@@ -72,11 +352,90 @@
     mermaid.initialize({
       startOnLoad:false,
       theme:"dark",
-      themeVariables:{background:"#0f172a",primaryColor:"#1e293b",primaryTextColor:"#e5e7eb",primaryBorderColor:"#334155",lineColor:"#64748b",fontFamily:"ui-system,system-ui,sans-serif"},
-      flowchart:{curve:"basis",htmlLabels:true,useMaxWidth:true},
+      themeVariables:{
+        background:"#0f172a", primaryColor:"#1e293b", primaryTextColor:"#e5e7eb",
+        primaryBorderColor:"#334155", lineColor:"#64748b",
+        fontFamily:"ui-system,system-ui,sans-serif"
+      },
+      flowchart:{curve:"linear", htmlLabels:true, useMaxWidth:false},
       securityLevel:"loose"
     });
   }
+
+  document.querySelector(".diagram-tools").addEventListener("click", function(event){
+    var button = event.target.closest("button[data-action]");
+    if(!button) return;
+    var action = button.getAttribute("data-action");
+    if(action === "zoom-out") zoomFromCenter(1 / 1.2);
+    if(action === "zoom-in") zoomFromCenter(1.2);
+    if(action === "fit") fitGraph(true);
+    if(action === "actual") showActualSize();
+  });
+
+  viewport.addEventListener("wheel", function(event){
+    if(!(event.ctrlKey || event.metaKey)) return;
+    event.preventDefault();
+    zoomAt(event.deltaY < 0 ? 1.12 : 1 / 1.12, event.clientX, event.clientY, false);
+  }, {passive:false});
+
+  var drag = null;
+  viewport.addEventListener("pointerdown", function(event){
+    if(event.button !== 0) return;
+    drag = {
+      pointerId:event.pointerId, x:event.clientX, y:event.clientY,
+      tx:translateX, ty:translateY, moved:false
+    };
+  });
+  viewport.addEventListener("pointermove", function(event){
+    if(!drag || event.pointerId !== drag.pointerId) return;
+    var dx = event.clientX - drag.x;
+    var dy = event.clientY - drag.y;
+    if(Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD){
+      if(!drag.moved){
+        drag.moved = true;
+        // Capturing on pointerdown retargets the later click to the viewport,
+        // so Mermaid nodes never receive it. Capture only after this gesture
+        // has unambiguously become a drag.
+        try { viewport.setPointerCapture(event.pointerId); } catch (_err) {}
+      }
+      viewport.classList.add("dragging");
+      translateX = drag.tx + dx;
+      translateY = drag.ty + dy;
+      fitMode = false;
+      applyTransform(false);
+      event.preventDefault();
+    }
+  });
+  function endDrag(event){
+    if(!drag || event.pointerId !== drag.pointerId) return;
+    suppressNodeClick = drag.moved;
+    drag = null;
+    viewport.classList.remove("dragging");
+    window.setTimeout(function(){ suppressNodeClick = false; }, 0);
+  }
+  window.addEventListener("pointerup", endDrag);
+  window.addEventListener("pointercancel", endDrag);
+
+  function handleResize(){
+    syncFrameHeight();
+    if(!container.querySelector("svg")) return;
+    if(fitMode){
+      fitGraph(false);
+      return;
+    }
+    var oldW = Math.max(1, lastViewportWidth);
+    var oldH = Math.max(1, lastViewportHeight);
+    var centerX = (oldW / 2 - translateX) / scale;
+    var centerY = (oldH / 2 - translateY) / scale;
+    translateX = viewport.clientWidth / 2 - centerX * scale;
+    translateY = viewport.clientHeight / 2 - centerY * scale;
+    applyTransform(false);
+  }
+  var resizeTimer = null;
+  window.addEventListener("resize", function(){
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(handleResize, 60);
+  });
 
   function onRender(event){
     var data = event && event.data;
@@ -87,37 +446,40 @@
     var traceId = args.trace_id || "";
     if(!src) return;
 
-    var container = document.getElementById("m_container");
+    syncFrameHeight();
     if(src === currentSrc && container.querySelector("svg")){
-      // 数据未变化：只更新焦点高亮，不重绘（避免点击后流程图闪烁）
+      var changedFocus = focus !== currentFocus;
       applyFocus(focus);
       scan(traceId);
-      setHeight(Math.max(document.documentElement.scrollHeight, container.scrollHeight, 300));
+      if(changedFocus) revealFocusIfNeeded(focus);
       return;
     }
+
+    var snapshot = (!fitMode && container.querySelector("svg")) ? graphCenterSnapshot() : null;
     currentSrc = src;
     container.innerHTML = "";
-    var pre = document.createElement("div");
-    pre.className = "mermaid";
-    pre.textContent = src;   // 用 textContent 避免 src 中的 <br/> 等被当作 HTML 提前解析
-    container.appendChild(pre);
+    var sourceNode = document.createElement("div");
+    sourceNode.className = "mermaid";
+    sourceNode.textContent = src;
+    container.appendChild(sourceNode);
     ensureMermaid();
     if(typeof mermaid === "undefined"){
-      container.innerHTML = "<pre style='color:#f87171;'>mermaid.min.js 加载失败，请检查 flowchart_component/mermaid.min.js</pre>";
-      setHeight(120);
+      container.innerHTML = "<pre class='render-error'>mermaid.min.js 加载失败，请检查 flowchart_component/mermaid.min.js</pre>";
       return;
     }
-    mermaid.run({nodes:[pre]}).then(function(){
+    mermaid.run({nodes:[sourceNode]}).then(function(){
+      if(!measureGraph()) return;
       scan(traceId);
       applyFocus(focus);
-      setHeight(Math.max(document.documentElement.scrollHeight, container.scrollHeight, 300));
-    }).catch(function(err){
-      container.innerHTML = "<pre style='color:#f87171;white-space:pre-wrap;'>流程图渲染失败：\n" +
-        ((err && err.message) ? String(err.message) : String(err)) + "</pre>";
-      setHeight(200);
+      if(snapshot) restoreSnapshot(snapshot);
+      else fitGraph(false);
+    }).catch(function(error){
+      container.innerHTML = "<pre class='render-error'>流程图渲染失败：\n" +
+        ((error && error.message) ? String(error.message) : String(error)) + "</pre>";
     });
   }
 
+  syncFrameHeight();
   window.addEventListener("message", onRender);
 })();
 </script>

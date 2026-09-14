@@ -24,6 +24,7 @@ def verify_export(
     *,
     min_spans: int = 1,
     min_traces: int = 1,
+    max_traces: int | None = None,
     require_kind_in: tuple[str, ...] = (),
     quiet: bool = False,
 ) -> bool:
@@ -38,11 +39,15 @@ def verify_export(
         5. Trace count >= ``min_traces``.
         6. If ``require_kind_in`` is given, at least one span has a kind from
            that set (e.g. ("LLM",) to ensure an LLM call actually happened).
+        7. If ``max_traces`` is given, trace count <= ``max_traces``. Use
+           ``max_traces=1`` in CI to assert that a whole agent run is ONE tree
+           rather than a pile of orphaned sub-traces.
 
     Args:
         expected_path: JSONL file to inspect.
         min_spans: minimum total span count.
         min_traces: minimum distinct trace_id count.
+        max_traces: maximum distinct trace_id count (None disables the check).
         require_kind_in: optional tuple of kinds that MUST appear at least once.
         quiet: if True, only print failures.
 
@@ -62,6 +67,7 @@ def verify_export(
             "size_bytes":     path.stat().st_size,
             "span_count":     len(spans),
             "trace_count":    len(trace_ids),
+            "root_count":     sum(1 for s in spans if not s.get("parent_span_id")),
             "kinds_seen":     sorted(kinds_seen),
             "schema_versions":sorted({s.get("schema_version") for s in spans}),
             "json_errors":    len(errors),
@@ -79,6 +85,12 @@ def verify_export(
             failures.append(f"span count {len(spans)} < min_spans={min_spans}")
         if len(trace_ids) < min_traces:
             failures.append(f"trace count {len(trace_ids)} < min_traces={min_traces}")
+        if max_traces is not None and len(trace_ids) > max_traces:
+            failures.append(
+                f"trace count {len(trace_ids)} > max_traces={max_traces}; one "
+                f"agent run should be ONE trace tree, so the extra roots mean "
+                f"trace context was lost (see orphan_trace_report)"
+            )
         if require_kind_in:
             have = kinds_seen & set(require_kind_in)
             if not have:
@@ -89,6 +101,43 @@ def verify_export(
 
     _print_report(summary, failures, quiet=quiet)
     return not failures
+
+
+def orphan_trace_report(expected_path: str | os.PathLike[str]) -> dict[str, Any]:
+    """Summarise the trace TREES in a JSONL export.
+
+    A trace is not a container, it is a tree: every span without a
+    ``parent_span_id`` is the root of its own tree. Wrapping a run in a root span
+    therefore yields exactly one root; more than one means the context never
+    reached part of the run, and the extra roots name the places to look at.
+
+    Returns:
+        ``{"path", "span_count", "trace_count", "roots"}`` where ``roots`` is a
+        list of ``(trace_id, name, kind, start_time)`` tuples sorted by
+        ``start_time``. Missing/unreadable files yield an empty report rather
+        than raising, so callers can use this unconditionally after a run.
+    """
+    path = Path(expected_path)
+    if not path.is_file():
+        return {"path": str(path), "span_count": 0, "trace_count": 0, "roots": []}
+    spans, _errors, trace_ids, _kinds = _scan(path)
+    roots = [
+        (
+            s.get("trace_id", "?"),
+            s.get("name", "?"),
+            s.get("kind") or "UNKNOWN",
+            s.get("start_time") or 0,
+        )
+        for s in spans
+        if not s.get("parent_span_id")
+    ]
+    roots.sort(key=lambda r: r[3])
+    return {
+        "path": str(path),
+        "span_count": len(spans),
+        "trace_count": len(trace_ids),
+        "roots": roots,
+    }
 
 
 def _scan(path: Path) -> tuple[list[dict], list[int], set[str], set[str]]:
